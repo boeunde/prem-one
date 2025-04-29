@@ -1,0 +1,9 @@
+{
+    "name": "PremOne",
+    "id": "premone",
+    "api": "1.0.0",
+    "main": "src/code.js",
+    "ui": "src/ui.html",
+    "editorType": ["figma"]
+  }
+  

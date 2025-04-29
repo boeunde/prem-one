@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Exported Frames</title>
+  <style>
+    body {
+      margin: 0;
+      height: 100vh;
+      display: flex;
+      overflow: hidden;
+      font-family: sans-serif;
+    }
+    #sidebar {
+      width: 200px;
+      background: #f2f2f2;
+      padding: 20px;
+      box-sizing: border-box;
+      overflow-y: auto;
+    }
+    #viewer {
+      flex: 1;
+      background: #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
+    a {
+      display: block;
+      margin-bottom: 10px;
+      color: #333;
+      text-decoration: none;
+      font-size: 16px;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <div id="sidebar">
+  </div>
+  <div id="viewer">
+    <iframe id="frame-viewer" src=""></iframe>
+  </div>
+
+  <script>
+    const links = [
+    ];
+
+    const sidebar = document.getElementById('sidebar');
+    const iframe = document.getElementById('frame-viewer');
+
+    links.forEach((link, index) => {
+      const a = document.createElement('a');
+      a.href = "#";
+      a.textContent = link.name;
+      a.onclick = () => {
+        iframe.src = link.url;
+      };
+      sidebar.appendChild(a);
+
+      if (index === 0) {
+        iframe.src = link.url;
+      }
+    });
+  </script>
+</body>
+</html>
