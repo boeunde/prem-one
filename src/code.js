@@ -44,23 +44,26 @@ figma.ui.onmessage = async function (msg) {
           box-sizing: border-box;
           pointer-events: auto;
           border: none;
-        `.replace(/\s+/g, ' ').trim();
+        `.replace(/s+/g, ' ').trim();
 
         var attributes = `
-          data-font-family="${text.fontFamily}"
-          data-font-weight="${text.fontWeight}"
-          data-font-size="${text.fontSize}"
-          data-line-height="${text.lineHeight}"
-          data-letter-spacing="${text.letterSpacing}"
-          data-x="${text.x}"
-          data-y="${text.y}"
-          data-width="${text.width}"
-          data-height="${text.height}"
-          data-font-color="${text.fontColor}"
-          data-opacity="${text.opacity}"
-          data-content="${escapeHTML(text.characters)}"
-        `.replace(/\s+/g, ' ').trim();
-
+        data-font-family="${text.fontFamily}"
+        data-font-weight="${text.fontWeight}"
+        data-font-size="${text.fontSize}"
+        data-line-height="${text.lineHeight}"
+        data-letter-spacing="${text.letterSpacing}"
+        data-text-align-horizontal="${text.textAlignHorizontal}"
+        data-text-align-vertical="${text.textAlignVertical}"
+        data-text-auto-resize="${text.textAutoResize}"
+        data-x="${text.x}"
+        data-y="${text.y}"
+        data-width="${text.width}"
+        data-height="${text.height}"
+        data-font-color="${text.fontColor}"
+        data-opacity="${text.opacity}"
+        data-content="${escapeHTML(text.characters)}"
+      `.replace(/\s+/g, ' ').trim();
+      
         return '<div class="text-layer" style="' + styles + '" ' + attributes + '></div>';
       }).join('\n');
 
@@ -71,30 +74,11 @@ figma.ui.onmessage = async function (msg) {
           <meta charset="UTF-8">
           <title>${frameName}</title>
           <style>
-            body, html {
-              margin: 0;
-              padding: 0;
-              width: 100%;
-              height: 100%;
-              overflow: hidden;
-              background: #fff;
-              display: flex;
-              justify-content: center;
-              align-items: center;
-            }
-            #frame-container {
-              position: relative;
-              width: ${frameWidth / 2}px;
-              height: auto;
-            }
-            #background-image {
-              width: 100%;
-              height: auto;
-              display: block;
-            }
-            .text-layer {
-              position: absolute;
-            }
+            body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #fff; display: flex; justify-content: center; align-items: center; }
+            #frame-container { position: relative; width: ${frameWidth / 2}px; height: auto; }
+            #background-image { width: 100%; height: auto; display: block; }
+            .text-layer { position: absolute; }
+            .text-layer:hover { cursor: pointer; }
           </style>
         </head>
         <body>
@@ -105,31 +89,25 @@ figma.ui.onmessage = async function (msg) {
           <script>
             var lockedLayer = null;
             var layers = document.querySelectorAll('.text-layer');
-
             layers.forEach(function (layer) {
               layer.addEventListener('mouseenter', function () {
-                if (!lockedLayer) {
-                  layer.style.border = '1px solid red';
-                }
+                layer.style.border = '1px solid yellow';
               });
-
               layer.addEventListener('mouseleave', function () {
-                if (!lockedLayer) {
+                if (lockedLayer === layer) {
+                  layer.style.border = '1px solid red';
+                } else {
                   layer.style.border = 'none';
                 }
               });
-
               layer.addEventListener('click', function (e) {
                 e.stopPropagation();
-                if (lockedLayer) {
-                  lockedLayer.style.border = 'none';
-                }
+                if (lockedLayer) { lockedLayer.style.border = 'none'; }
                 lockedLayer = layer;
                 layer.style.border = '1px solid red';
                 sendProperties(layer);
               });
             });
-
             window.addEventListener('click', function () {
               if (lockedLayer) {
                 lockedLayer.style.border = 'none';
@@ -137,25 +115,19 @@ figma.ui.onmessage = async function (msg) {
                 clearProperties();
               }
             });
-
             function sendProperties(layer) {
-              var props = {
-                "Font Family": layer.dataset.fontFamily,
-                "Font Weight": layer.dataset.fontWeight,
-                "Font Size": layer.dataset.fontSize,
-                "Line Height": layer.dataset.lineHeight,
-                "Letter Spacing": layer.dataset.letterSpacing,
-                "X": layer.dataset.x,
-                "Y": layer.dataset.y,
-                "Width": layer.dataset.width,
-                "Height": layer.dataset.height,
-                "Font Color": layer.dataset.fontColor,
-                "Opacity": layer.dataset.opacity,
-                "Content": layer.dataset.content
-              };
+              var props = {};
+              for (var attr of layer.attributes) {
+                if (attr.name.startsWith('data-') && attr.value !== "") {
+                  var key = attr.name.replace('data-', '')
+                                     .split('-')
+                                     .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+                                     .join(' ');
+                  props[key] = attr.value;
+                }
+              }
               parent.postMessage({ pluginMessage: { type: "show-properties", props: props } }, '*');
             }
-
             function clearProperties() {
               parent.postMessage({ pluginMessage: { type: "clear-properties" } }, '*');
             }
@@ -176,42 +148,13 @@ figma.ui.onmessage = async function (msg) {
         <meta charset="UTF-8">
         <title>Exported Frames</title>
         <style>
-          body {
-            margin: 0;
-            height: 100vh;
-            display: flex;
-            overflow: hidden;
-          }
-          #sidebar {
-            width: 300px;
-            background: #f2f2f2;
-            overflow-y: auto;
-            padding: 20px;
-          }
-          #viewer {
-            flex: 1;
-            overflow: hidden;
-            background: #fff;
-          }
-          iframe {
-            width: 100%;
-            height: 100%;
-            border: none;
-          }
-          #properties {
-            width: 300px;
-            background: #fafafa;
-            overflow-y: auto;
-            padding: 10px;
-            border-left: 1px solid #ccc;
-            font-family: sans-serif;
-          }
-          a {
-            display: block;
-            margin-bottom: 10px;
-            color: #333;
-            text-decoration: none;
-          }
+          body { margin: 0; height: 100vh; display: flex; overflow: hidden; font-family: sans-serif; }
+          #sidebar { width: 200px; background: #f2f2f2; padding: 20px; box-sizing: border-box; overflow-y: auto; }
+          #viewer { flex: 1; background: #ffffff; display: flex; align-items: center; justify-content: center; }
+          #properties { width: 300px; background: #fafafa; overflow-y: auto; padding: 10px; border-left: 1px solid #ccc; }
+          iframe { width: 100%; height: 100%; border: none; }
+          a { display: block; margin-bottom: 10px; color: #333; text-decoration: none; font-size: 16px; }
+          a:hover { text-decoration: underline; }
         </style>
       </head>
       <body>
@@ -220,13 +163,11 @@ figma.ui.onmessage = async function (msg) {
           <iframe id="frame-viewer" src=""></iframe>
         </div>
         <div id="properties">Hover a text layer to see properties</div>
-
         <script>
           var links = ${JSON.stringify(linkArrayForScript)};
           var sidebar = document.getElementById('sidebar');
           var iframe = document.getElementById('frame-viewer');
           var properties = document.getElementById('properties');
-
           links.forEach(function (link, index) {
             var a = document.createElement('a');
             a.href = "#";
@@ -240,7 +181,6 @@ figma.ui.onmessage = async function (msg) {
               iframe.src = link.url;
             }
           });
-
           window.addEventListener('message', function (event) {
             var message = event.data.pluginMessage;
             if (message.type === "show-properties") {
@@ -266,12 +206,12 @@ figma.ui.onmessage = async function (msg) {
 };
 
 function sanitizeFilename(name) {
-  return name.replace(/[<>:"/\\|?*]/g, "").replace(/\s+/g, "_");
+  return name.replace(/[<>:"/|?*]/g, "").replace(/s+/g, "_");
 }
 
 async function findTextLayers(node) {
   var texts = [];
-  if (node.type === "TEXT") {
+  if (node.type === "TEXT" && !node.locked) {
     try {
       await figma.loadFontAsync(node.fontName);
       var props = await extractTextLayerProps(node);
@@ -289,6 +229,16 @@ async function findTextLayers(node) {
 }
 
 async function extractTextLayerProps(textNode) {
+  let colorHex = "#000000";
+  let colorOpacityPercent = "";
+
+  if (textNode.fills && textNode.fills[0] && textNode.fills[0].color) {
+    colorHex = rgbToHex(textNode.fills[0].color);
+    if (typeof textNode.fills[0].opacity === "number") {
+      colorOpacityPercent = ` (${Math.round(textNode.fills[0].opacity * 100)}%)`;
+    }
+  }
+
   return {
     characters: textNode.characters !== undefined ? textNode.characters : "",
     fontFamily: textNode.fontName && textNode.fontName.family ? textNode.fontName.family : "sans-serif",
@@ -296,11 +246,14 @@ async function extractTextLayerProps(textNode) {
     fontSize: textNode.fontSize || 16,
     lineHeight: textNode.lineHeight && textNode.lineHeight.value ? textNode.lineHeight.value : "normal",
     letterSpacing: textNode.letterSpacing && textNode.letterSpacing.value ? textNode.letterSpacing.value : 0,
+    textAlignHorizontal: textNode.textAlignHorizontal || "NONE",
+    textAlignVertical: textNode.textAlignVertical || "NONE",
+    textAutoResize: textNode.textAutoResize || "NONE",
     x: textNode.x,
     y: textNode.y,
     width: textNode.width,
     height: textNode.height,
-    fontColor: textNode.fills && textNode.fills[0] && textNode.fills[0].color ? rgbToHex(textNode.fills[0].color) : "#000000",
+    fontColor: colorHex + colorOpacityPercent,
     opacity: textNode.opacity || 1
   };
 }
