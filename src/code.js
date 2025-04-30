@@ -215,6 +215,10 @@ async function findTargetLayers(node) {
 async function extractLayerProps(node) {
   let colorHex = "N/A";
   let colorOpacityPercent = "";
+  let tips = [];
+  let commonProps = {};
+  let typeProps = {};
+  let props = {};
 
   if (node.fills && node.fills.length > 0 && node.fills[0]) {
     const fill = node.fills[0];
@@ -224,23 +228,32 @@ async function extractLayerProps(node) {
         colorOpacityPercent = ` (${Math.round(fill.opacity * 100)}%)`;
       }
     } else {
-      colorHex = fill.type; // LINEAR, RADIAL, etc.
+      colorHex = fill.type;
+    }
+
+    if (node.fills.length > 1) {
+      tips.push("Fill이 2개 이상 적용되어 있습니다.");
     }
   }
 
-  let props = {
+  commonProps = {
     Layername: node.name || "",
     X: node.x,
     Y: node.y,
     Width: node.width,
     Height: node.height,
+    Rotation: node.rotation !== undefined ? Math.round(node.rotation) + "°" : "0°",
     Color: colorHex + colorOpacityPercent,
     Opacity: (node.opacity !== undefined ? Math.round(node.opacity * 100) + "%" : "100%")
   };
 
+  if (node.rotation && Math.round(node.rotation) !== 0) {
+    tips.push("Rotation이 적용되어 있습니다.");
+  }
+
   if (node.type === "TEXT") {
-    Object.assign(props, {
-      Content: node.characters || "",
+    typeProps = {
+      "Content": node.characters || "",
       "Font Family": (node.fontName && node.fontName.family) ? node.fontName.family : "sans-serif",
       "Font Weight": (node.fontName && node.fontName.style) ? node.fontName.style : "Regular",
       "Font Size": node.fontSize || 16,
@@ -249,7 +262,7 @@ async function extractLayerProps(node) {
       "Text Align Horizontal": node.textAlignHorizontal || "NONE",
       "Text Align Vertical": node.textAlignVertical || "NONE",
       "Text Auto Resize": node.textAutoResize || "NONE"
-    });
+    };
   } else if (["VECTOR", "RECTANGLE", "ELLIPSE", "POLYGON"].includes(node.type)) {
     let strokeColor = "N/A";
     let strokeColorAlpha = "";
@@ -260,12 +273,10 @@ async function extractLayerProps(node) {
       }
     }
 
-    Object.assign(props, {
-      "Stroke Color": strokeColor + strokeColorAlpha
-    });
+    typeProps["Stroke Color"] = strokeColor + strokeColorAlpha;
 
     if (strokeColor !== "N/A") {
-      Object.assign(props, {
+      Object.assign(typeProps, {
         "Stroke Weight": node.strokeWeight !== undefined ? node.strokeWeight : "N/A",
         "Dash Pattern": (node.dashPattern && node.dashPattern.length > 0) ? node.dashPattern.join(", ") : "none"
       });
@@ -273,14 +284,29 @@ async function extractLayerProps(node) {
 
     if ("cornerRadius" in node) {
       if (typeof node.cornerRadius === 'number') {
-        props["Corner Radius"] = node.cornerRadius;
+        typeProps["Corner Radius"] = node.cornerRadius;
       } else {
-        props["Top Left Radius"] = node.topLeftRadius || 0;
-        props["Top Right Radius"] = node.topRightRadius || 0;
-        props["Bottom Left Radius"] = node.bottomLeftRadius || 0;
-        props["Bottom Right Radius"] = node.bottomRightRadius || 0;
+        typeProps["Top Left Radius"] = node.topLeftRadius || 0;
+        typeProps["Top Right Radius"] = node.topRightRadius || 0;
+        typeProps["Bottom Left Radius"] = node.bottomLeftRadius || 0;
+        typeProps["Bottom Right Radius"] = node.bottomRightRadius || 0;
       }
     }
+  }
+
+  props["* Common Properties"] = "---";
+  for (const key in commonProps) {
+    props[key] = commonProps[key];
+  }
+
+  props[`* ${node.type} Properties`] = "---";
+  for (const key in typeProps) {
+    props[key] = typeProps[key];
+  }
+
+  if (tips.length > 0) {
+    props["* Tip"] = "---";
+    props["*** Tip"] = tips.join("\n");
   }
 
   return props;
@@ -291,7 +317,7 @@ function rgbToHex(color) {
   var g = Math.round(color.g * 255);
   var b = Math.round(color.b * 255);
   return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
-} 
+}
 
 function escapeHTML(text) {
   return text.replace(/[&<>"']/g, function (m) {
