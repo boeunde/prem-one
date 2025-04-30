@@ -27,13 +27,13 @@ figma.ui.onmessage = async function (msg) {
       var frameWidth = frame.width;
       var frameHeight = frame.height;
 
-      var textLayers = await findTextLayers(frame);
+      var targetLayers = await findTargetLayers(frame);
 
-      var textDivs = textLayers.map(function (text) {
-        var leftPercent = (text.x / frameWidth) * 100;
-        var topPercent = (text.y / frameHeight) * 100;
-        var widthPercent = (text.width / frameWidth) * 100;
-        var heightPercent = (text.height / frameHeight) * 100;
+      var textDivs = targetLayers.map(function (layer) {
+        var leftPercent = (layer.X / frameWidth) * 100;
+        var topPercent = (layer.Y / frameHeight) * 100;
+        var widthPercent = (layer.Width / frameWidth) * 100;
+        var heightPercent = (layer.Height / frameHeight) * 100;
 
         var styles = `
           position: absolute;
@@ -44,26 +44,13 @@ figma.ui.onmessage = async function (msg) {
           box-sizing: border-box;
           pointer-events: auto;
           border: none;
-        `.replace(/s+/g, ' ').trim();
+        `.replace(/\s+/g, ' ').trim();
 
-        var attributes = `
-        data-font-family="${text.fontFamily}"
-        data-font-weight="${text.fontWeight}"
-        data-font-size="${text.fontSize}"
-        data-line-height="${text.lineHeight}"
-        data-letter-spacing="${text.letterSpacing}"
-        data-text-align-horizontal="${text.textAlignHorizontal}"
-        data-text-align-vertical="${text.textAlignVertical}"
-        data-text-auto-resize="${text.textAutoResize}"
-        data-x="${text.x}"
-        data-y="${text.y}"
-        data-width="${text.width}"
-        data-height="${text.height}"
-        data-font-color="${text.fontColor}"
-        data-opacity="${text.opacity}"
-        data-content="${escapeHTML(text.characters)}"
-      `.replace(/\s+/g, ' ').trim();
-      
+        var attributes = Object.entries(layer).map(([key, value]) => {
+          const attrName = key.toLowerCase().replace(/ /g, "-");
+          return `data-${attrName}="${escapeHTML(String(value))}"`;
+        }).join(' ');
+
         return '<div class="text-layer" style="' + styles + '" ' + attributes + '></div>';
       }).join('\n');
 
@@ -119,10 +106,7 @@ figma.ui.onmessage = async function (msg) {
               var props = {};
               for (var attr of layer.attributes) {
                 if (attr.name.startsWith('data-') && attr.value !== "") {
-                  var key = attr.name.replace('data-', '')
-                                     .split('-')
-                                     .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-                                     .join(' ');
+                  var key = attr.name.replace('data-', '').split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
                   props[key] = attr.value;
                 }
               }
@@ -206,56 +190,95 @@ figma.ui.onmessage = async function (msg) {
 };
 
 function sanitizeFilename(name) {
-  return name.replace(/[<>:"/|?*]/g, "").replace(/s+/g, "_");
+  return name.replace(/[<>:"/\\|?*]/g, "").replace(/\s+/g, "_");
 }
 
-async function findTextLayers(node) {
-  var texts = [];
-  if (node.type === "TEXT" && !node.locked) {
+async function findTargetLayers(node) {
+  var layers = [];
+  if ((node.type === "TEXT" || ["VECTOR", "RECTANGLE", "ELLIPSE", "POLYGON"].includes(node.type)) && !node.locked) {
     try {
-      await figma.loadFontAsync(node.fontName);
-      var props = await extractTextLayerProps(node);
-      if (props) texts.push(props);
+      if (node.type === "TEXT") await figma.loadFontAsync(node.fontName);
+      var props = await extractLayerProps(node);
+      if (props) layers.push(props);
     } catch (e) {
-      console.log('Font load failed, skipping text node');
+      console.log('Font load failed or layer error, skipping node');
     }
   } else if ("children" in node) {
     for (var i = 0; i < node.children.length; i++) {
-      var childTexts = await findTextLayers(node.children[i]);
-      texts = texts.concat(childTexts);
+      var childLayers = await findTargetLayers(node.children[i]);
+      layers = layers.concat(childLayers);
     }
   }
-  return texts;
+  return layers;
 }
 
-async function extractTextLayerProps(textNode) {
+async function extractLayerProps(node) {
   let colorHex = "#000000";
   let colorOpacityPercent = "";
 
-  if (textNode.fills && textNode.fills[0] && textNode.fills[0].color) {
-    colorHex = rgbToHex(textNode.fills[0].color);
-    if (typeof textNode.fills[0].opacity === "number") {
-      colorOpacityPercent = ` (${Math.round(textNode.fills[0].opacity * 100)}%)`;
+  if (node.fills && node.fills[0] && node.fills[0].color) {
+    colorHex = rgbToHex(node.fills[0].color);
+    if (typeof node.fills[0].opacity === "number") {
+      colorOpacityPercent = ` (${Math.round(node.fills[0].opacity * 100)}%)`;
     }
   }
 
-  return {
-    characters: textNode.characters !== undefined ? textNode.characters : "",
-    fontFamily: textNode.fontName && textNode.fontName.family ? textNode.fontName.family : "sans-serif",
-    fontWeight: textNode.fontName && textNode.fontName.style ? textNode.fontName.style : "Regular",
-    fontSize: textNode.fontSize || 16,
-    lineHeight: textNode.lineHeight && textNode.lineHeight.value ? textNode.lineHeight.value : "normal",
-    letterSpacing: textNode.letterSpacing && textNode.letterSpacing.value ? textNode.letterSpacing.value : 0,
-    textAlignHorizontal: textNode.textAlignHorizontal || "NONE",
-    textAlignVertical: textNode.textAlignVertical || "NONE",
-    textAutoResize: textNode.textAutoResize || "NONE",
-    x: textNode.x,
-    y: textNode.y,
-    width: textNode.width,
-    height: textNode.height,
-    fontColor: colorHex + colorOpacityPercent,
-    opacity: textNode.opacity || 1
+  let props = {
+    Layername: node.name || "",
+    X: node.x,
+    Y: node.y,
+    Width: node.width,
+    Height: node.height,
+    Color: colorHex + colorOpacityPercent,
+    Opacity: (node.opacity !== undefined ? (node.opacity * 100).toFixed(1) + "%" : "100%")
   };
+
+  if (node.type === "TEXT") {
+    Object.assign(props, {
+      Content: node.characters || "",
+      "Font Family": (node.fontName && node.fontName.family) ? node.fontName.family : "sans-serif",
+      "Font Weight": (node.fontName && node.fontName.style) ? node.fontName.style : "Regular",
+      "Font Size": node.fontSize || 16,
+      "Line Height": (typeof node.lineHeight === 'object' && node.lineHeight.value) ? node.lineHeight.value : "normal",
+      "Letter Spacing": (typeof node.letterSpacing === 'object' && node.letterSpacing.value) ? node.letterSpacing.value : 0,
+      "Text Align Horizontal": node.textAlignHorizontal || "NONE",
+      "Text Align Vertical": node.textAlignVertical || "NONE",
+      "Text Auto Resize": node.textAutoResize || "NONE"
+    });
+  } else if (["VECTOR", "RECTANGLE", "ELLIPSE", "POLYGON"].includes(node.type)) {
+    let strokeColor = "N/A";
+    let strokeColorAlpha = "";
+    if (node.strokes && node.strokes[0] && node.strokes[0].type === "SOLID") {
+      strokeColor = rgbToHex(node.strokes[0].color);
+      if (typeof node.strokes[0].opacity === "number") {
+        strokeColorAlpha = ` (${Math.round(node.strokes[0].opacity * 100)}%)`;
+      }
+    }
+
+    Object.assign(props, {
+      "Stroke Color": strokeColor + strokeColorAlpha
+    });
+
+    if (strokeColor !== "N/A") {
+      Object.assign(props, {
+        "Stroke Weight": node.strokeWeight !== undefined ? node.strokeWeight : "N/A",
+        "Dash Pattern": (node.dashPattern && node.dashPattern.length > 0) ? node.dashPattern.join(", ") : "none"
+      });
+    }
+
+    if ("cornerRadius" in node) {
+      if (typeof node.cornerRadius === 'number') {
+        props["Corner Radius"] = node.cornerRadius;
+      } else {
+        props["Top Left Radius"] = node.topLeftRadius || 0;
+        props["Top Right Radius"] = node.topRightRadius || 0;
+        props["Bottom Left Radius"] = node.bottomLeftRadius || 0;
+        props["Bottom Right Radius"] = node.bottomRightRadius || 0;
+      }
+    }
+  }
+
+  return props;
 }
 
 function rgbToHex(color) {
