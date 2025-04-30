@@ -62,7 +62,7 @@ figma.ui.onmessage = async function (msg) {
           <title>${frameName}</title>
           <style>
             body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #fff; display: flex; justify-content: center; align-items: center; }
-            #frame-container { position: relative; width: ${frameWidth / 2}px; height: auto; }
+            #frame-container { position: relative; width: ${frameWidth / 2}px; height: auto; box-shadow: 0 1px 5px #d9d9d9;}
             #background-image { width: 100%; height: auto; display: block; }
             .text-layer { position: absolute; }
             .text-layer:hover { cursor: pointer; }
@@ -213,13 +213,18 @@ async function findTargetLayers(node) {
 }
 
 async function extractLayerProps(node) {
-  let colorHex = "#000000";
+  let colorHex = "N/A";
   let colorOpacityPercent = "";
 
-  if (node.fills && node.fills[0] && node.fills[0].color) {
-    colorHex = rgbToHex(node.fills[0].color);
-    if (typeof node.fills[0].opacity === "number") {
-      colorOpacityPercent = ` (${Math.round(node.fills[0].opacity * 100)}%)`;
+  if (node.fills && node.fills.length > 0 && node.fills[0]) {
+    const fill = node.fills[0];
+    if (fill.type === "SOLID" && fill.color) {
+      colorHex = rgbToHex(fill.color);
+      if (typeof fill.opacity === "number") {
+        colorOpacityPercent = ` (${Math.round(fill.opacity * 100)}%)`;
+      }
+    } else {
+      colorHex = fill.type; // LINEAR, RADIAL, etc.
     }
   }
 
@@ -230,7 +235,7 @@ async function extractLayerProps(node) {
     Width: node.width,
     Height: node.height,
     Color: colorHex + colorOpacityPercent,
-    Opacity: (node.opacity !== undefined ? (node.opacity * 100).toFixed(1) + "%" : "100%")
+    Opacity: (node.opacity !== undefined ? Math.round(node.opacity * 100) + "%" : "100%")
   };
 
   if (node.type === "TEXT") {
@@ -286,7 +291,7 @@ function rgbToHex(color) {
   var g = Math.round(color.g * 255);
   var b = Math.round(color.b * 255);
   return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
-}
+} 
 
 function escapeHTML(text) {
   return text.replace(/[&<>"']/g, function (m) {
