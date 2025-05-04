@@ -194,21 +194,27 @@ function sanitizeFilename(name) {
 }
 
 async function findTargetLayers(node) {
-  var layers = [];
-  if ((node.type === "TEXT" || ["VECTOR", "RECTANGLE", "ELLIPSE", "POLYGON"].includes(node.type)) && !node.locked) {
+  let layers = [];
+
+  if (
+    ["TEXT", "VECTOR", "RECTANGLE", "ELLIPSE", "POLYGON", "LINE", "STAR"].includes(node.type) &&
+    !node.locked &&
+    node.visible !== false
+  ) {
     try {
       if (node.type === "TEXT") await figma.loadFontAsync(node.fontName);
-      var props = await extractLayerProps(node);
+      const props = await extractLayerProps(node);
       if (props) layers.push(props);
     } catch (e) {
       console.log('Font load failed or layer error, skipping node');
     }
   } else if ("children" in node) {
-    for (var i = 0; i < node.children.length; i++) {
-      var childLayers = await findTargetLayers(node.children[i]);
-      layers = layers.concat(childLayers);
+    for (const child of node.children) {
+      const childLayers = await findTargetLayers(child);
+      layers.push(...childLayers);
     }
   }
+
   return layers;
 }
 
@@ -247,6 +253,15 @@ async function extractLayerProps(node) {
     Opacity: (node.opacity !== undefined ? Math.round(node.opacity * 100) + "%" : "100%")
   };
 
+  if (["LINE", "VECTOR"].includes(node.type)) {
+    if (commonProps.Width <= 0 && node.strokeWeight) {
+      commonProps.Width = node.strokeWeight;
+    }
+    if (commonProps.Height <= 0 && node.strokeWeight) {
+    commonProps.Height = node.strokeWeight;
+    }
+  }
+
   if (node.rotation && Math.round(node.rotation) !== 0) {
     tips.push("Rotation이 적용되어 있습니다.");
   }
@@ -263,7 +278,7 @@ async function extractLayerProps(node) {
       "Text Align Vertical": node.textAlignVertical || "NONE",
       "Text Auto Resize": node.textAutoResize || "NONE"
     };
-  } else if (["VECTOR", "RECTANGLE", "ELLIPSE", "POLYGON"].includes(node.type)) {
+  } else if (["VECTOR", "RECTANGLE", "ELLIPSE", "POLYGON", "STAR"].includes(node.type)) {
     let strokeColor = "N/A";
     let strokeColorAlpha = "";
     if (node.strokes && node.strokes[0] && node.strokes[0].type === "SOLID") {
@@ -272,16 +287,16 @@ async function extractLayerProps(node) {
         strokeColorAlpha = ` (${Math.round(node.strokes[0].opacity * 100)}%)`;
       }
     }
-
+  
     typeProps["Stroke Color"] = strokeColor + strokeColorAlpha;
-
+  
     if (strokeColor !== "N/A") {
       Object.assign(typeProps, {
         "Stroke Weight": node.strokeWeight !== undefined ? node.strokeWeight : "N/A",
         "Dash Pattern": (node.dashPattern && node.dashPattern.length > 0) ? node.dashPattern.join(", ") : "none"
       });
     }
-
+  
     if ("cornerRadius" in node) {
       if (typeof node.cornerRadius === 'number') {
         typeProps["Corner Radius"] = node.cornerRadius;
@@ -291,6 +306,11 @@ async function extractLayerProps(node) {
         typeProps["Bottom Left Radius"] = node.bottomLeftRadius || 0;
         typeProps["Bottom Right Radius"] = node.bottomRightRadius || 0;
       }
+    }
+  
+    if (node.type === "STAR") {
+      typeProps["Point Count"] = node.pointCount;
+      typeProps["Inner Radius"] = (node.innerRadius * 100).toFixed(1) + "%";
     }
   }
 
