@@ -1,193 +1,95 @@
-figma.showUI(__html__);
+figma.showUI(__html__, { width: 400, height: 600 });
 
-figma.on("selectionchange", function () {
-  const selection = figma.currentPage.selection;
-  if (selection.length >= 1 && selection.every(function (node) { return node.type === "FRAME"; })) {
-    figma.ui.postMessage({ type: "enable-export", enabled: true });
-  } else {
-    figma.ui.postMessage({ type: "enable-export", enabled: false });
+figma.ui.onmessage = async (msg) => {
+  if (msg.type === "refresh-frames") {
+    const frames = getAllTopFrames();
+    figma.ui.postMessage({ type: "show-frame-list", frames });
   }
-});
 
-figma.ui.onmessage = async function (msg) {
   if (msg.type === "export") {
-    const selection = figma.currentPage.selection;
+    const selectedNodes = msg.selectedIds
+      .map(id => figma.getNodeById(id))
+      .filter(node => node && node.type === "FRAME");
+
+    const pageOrderMap = new Map();
+    figma.root.children.forEach((page, index) => {
+      if (page.type === 'PAGE') pageOrderMap.set(page.id, index + 1);
+    });
+
+    const pageGroupedFrames = new Map();
+    for (const frame of selectedNodes) {
+      const page = frame.parent;
+      if (!pageGroupedFrames.has(page.id)) pageGroupedFrames.set(page.id, []);
+      pageGroupedFrames.get(page.id).push(frame);
+    }
+
     const files = {};
     const linkArrayForScript = [];
 
-    for (var i = 0; i < selection.length; i++) {
-      var frame = selection[i];
-      var exportOptions = {
-        format: "PNG",
-        constraint: { type: "SCALE", value: 2 }
-      };
-      var pngBytes = await frame.exportAsync(exportOptions);
+    for (const [pageId, frames] of pageGroupedFrames.entries()) {
+      const page = frames[0].parent;
+      const pageName = sanitizeFilename(page.name);
+      const pageIndex = String(pageOrderMap.get(pageId)).padStart(2, '0');
 
-      var frameName = sanitizeFilename(frame.name || "exported");
-      var frameWidth = frame.width;
-      var frameHeight = frame.height;
+      frames.sort((a, b) => a.y - b.y || a.x - b.x);
 
-      var targetLayers = await findTargetLayers(frame);
+      for (let i = 0; i < frames.length; i++) {
+        const frame = frames[i];
+        const frameName = sanitizeFilename(frame.name);
+        const frameIndex = String(i + 1).padStart(3, '0');
+        const finalName = `${pageIndex}-${pageName}-${frameIndex}-${frameName}`;
 
-      var textDivs = targetLayers.map(function (layer) {
-        var leftPercent = (layer.X / frameWidth) * 100;
-        var topPercent = (layer.Y / frameHeight) * 100;
-        var widthPercent = (layer.Width / frameWidth) * 100;
-        var heightPercent = (layer.Height / frameHeight) * 100;
+        const exportOptions = { format: "PNG", constraint: { type: "SCALE", value: 2 } };
+        const pngBytes = await frame.exportAsync(exportOptions);
 
-        var styles = `
-          position: absolute;
-          top: ${topPercent}%;
-          left: ${leftPercent}%;
-          width: ${widthPercent}%;
-          height: ${heightPercent}%;
-          box-sizing: border-box;
-          pointer-events: auto;
-          border: none;
-        `.replace(/\s+/g, ' ').trim();
+        const frameWidth = frame.width;
+        const frameHeight = frame.height;
+        const targetLayers = await findTargetLayers(frame);
 
-        var attributes = Object.entries(layer).map(([key, value]) => {
-          const attrName = key.toLowerCase().replace(/ /g, "-");
-          return `data-${attrName}="${escapeHTML(String(value))}"`;
-        }).join(' ');
+        const textDivs = targetLayers.map(layer => {
+          const leftPercent = (layer.X / frameWidth) * 100;
+          const topPercent = (layer.Y / frameHeight) * 100;
+          const widthPercent = (layer.Width / frameWidth) * 100;
+          const heightPercent = (layer.Height / frameHeight) * 100;
 
-        return '<div class="text-layer" style="' + styles + '" ' + attributes + '></div>';
-      }).join('\n');
+          const styles = `position: absolute; top: ${topPercent}%; left: ${leftPercent}%; width: ${widthPercent}%; height: ${heightPercent}%; box-sizing: border-box; pointer-events: auto; border: none;`.replace(/\s+/g, ' ').trim();
 
-      var htmlContent = `
-        <!DOCTYPE html>
-        <html lang="en">
-        <head>
-          <meta charset="UTF-8">
-          <title>${frameName}</title>
-          <style>
-            body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #fff; display: flex; justify-content: center; align-items: center; }
-            #frame-container { position: relative; width: ${frameWidth / 2}px; height: auto; box-shadow: 0 1px 5px #d9d9d9;}
-            #background-image { width: 100%; height: auto; display: block; }
-            .text-layer { position: absolute; }
-            .text-layer:hover { cursor: pointer; }
-          </style>
-        </head>
-        <body>
-          <div id="frame-container">
-            <img id="background-image" src="../Thumbnails/${frameName}.png" alt="${frameName}">
-            ${textDivs}
-          </div>
-          <script>
-            var lockedLayer = null;
-            var layers = document.querySelectorAll('.text-layer');
-            layers.forEach(function (layer) {
-              layer.addEventListener('mouseenter', function () {
-                layer.style.border = '1px solid yellow';
-              });
-              layer.addEventListener('mouseleave', function () {
-                if (lockedLayer === layer) {
-                  layer.style.border = '1px solid red';
-                } else {
-                  layer.style.border = 'none';
-                }
-              });
-              layer.addEventListener('click', function (e) {
-                e.stopPropagation();
-                if (lockedLayer) { lockedLayer.style.border = 'none'; }
-                lockedLayer = layer;
-                layer.style.border = '1px solid red';
-                sendProperties(layer);
-              });
-            });
-            window.addEventListener('click', function () {
-              if (lockedLayer) {
-                lockedLayer.style.border = 'none';
-                lockedLayer = null;
-                clearProperties();
-              }
-            });
-            function sendProperties(layer) {
-              var props = {};
-              for (var attr of layer.attributes) {
-                if (attr.name.startsWith('data-') && attr.value !== "") {
-                  var key = attr.name.replace('data-', '').split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
-                  props[key] = attr.value;
-                }
-              }
-              parent.postMessage({ pluginMessage: { type: "show-properties", props: props } }, '*');
-            }
-            function clearProperties() {
-              parent.postMessage({ pluginMessage: { type: "clear-properties" } }, '*');
-            }
-          </script>
-        </body>
-        </html>
-      `;
+          const attributes = Object.entries(layer).map(([key, value]) => {
+            const attrName = key.toLowerCase().replace(/ /g, "-");
+            return `data-${attrName}="${escapeHTML(String(value))}"`;
+          }).join(' ');
 
-      files["Thumbnails/" + frameName + ".png"] = pngBytes;
-      files["Frames/" + frameName + ".html"] = htmlContent;
-      linkArrayForScript.push({ name: frameName, url: "Frames/" + frameName + ".html" });
+          return `<div class=\"text-layer\" style=\"${styles}\" ${attributes}></div>`;
+        }).join('\n');
+
+        const htmlContent = `<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"UTF-8\"><title>${finalName}</title><style>body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #fff; display: flex; justify-content: center; align-items: center; } #frame-container { position: relative; width: ${frameWidth}px; height: auto; box-shadow: 0 1px 5px #d9d9d9;} #background-image { width: 100%; height: auto; display: block; } .text-layer { position: absolute; } .text-layer:hover { cursor: pointer; }</style></head><body><div id=\"frame-container\"><img id=\"background-image\" src=\"../Thumbnails/${finalName}.png\" alt=\"${finalName}\">${textDivs}</div><script>var lockedLayer = null; var layers = document.querySelectorAll('.text-layer'); layers.forEach(function (layer) { layer.addEventListener('mouseenter', function () { layer.style.border = '1px solid yellow'; }); layer.addEventListener('mouseleave', function () { if (lockedLayer === layer) { layer.style.border = '1px solid red'; } else { layer.style.border = 'none'; } }); layer.addEventListener('click', function (e) { e.stopPropagation(); if (lockedLayer) { lockedLayer.style.border = 'none'; } lockedLayer = layer; layer.style.border = '1px solid red'; sendProperties(layer); }); }); window.addEventListener('click', function () { if (lockedLayer) { lockedLayer.style.border = 'none'; lockedLayer = null; clearProperties(); } }); function sendProperties(layer) { var props = {}; for (var attr of layer.attributes) { if (attr.name.startsWith('data-') && attr.value !== "") { var key = attr.name.replace('data-', '').split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' '); props[key] = attr.value; } } parent.postMessage({ pluginMessage: { type: \"show-properties\", props: props } }, '*'); } function clearProperties() { parent.postMessage({ pluginMessage: { type: \"clear-properties\" } }, '*'); }</script></body></html>`;
+
+        files[`Thumbnails/${finalName}.png`] = pngBytes;
+        files[`Frames/${finalName}.html`] = htmlContent;
+        linkArrayForScript.push({ name: frameName, page: page.name, url: `Frames/${finalName}.html` });
+      }
     }
 
-    var indexHtmlContent = `
-      <!DOCTYPE html>
-      <html lang="en">
-      <head>
-        <meta charset="UTF-8">
-        <title>Exported Frames</title>
-        <style>
-          body { margin: 0; height: 100vh; display: flex; overflow: hidden; font-family: sans-serif; }
-          #sidebar { width: 200px; background: #f2f2f2; padding: 20px; box-sizing: border-box; overflow-y: auto; }
-          #viewer { flex: 1; background: #ffffff; display: flex; align-items: center; justify-content: center; }
-          #properties { width: 300px; background: #fafafa; overflow-y: auto; padding: 10px; border-left: 1px solid #ccc; }
-          iframe { width: 100%; height: 100%; border: none; }
-          a { display: block; margin-bottom: 10px; color: #333; text-decoration: none; font-size: 16px; }
-          a:hover { text-decoration: underline; }
-        </style>
-      </head>
-      <body>
-        <div id="sidebar"></div>
-        <div id="viewer">
-          <iframe id="frame-viewer" src=""></iframe>
-        </div>
-        <div id="properties">Hover a text layer to see properties</div>
-        <script>
-          var links = ${JSON.stringify(linkArrayForScript)};
-          var sidebar = document.getElementById('sidebar');
-          var iframe = document.getElementById('frame-viewer');
-          var properties = document.getElementById('properties');
-          links.forEach(function (link, index) {
-            var a = document.createElement('a');
-            a.href = "#";
-            a.textContent = link.name;
-            a.onclick = function () {
-              iframe.src = link.url;
-              properties.innerHTML = "Hover a text layer to see properties";
-            };
-            sidebar.appendChild(a);
-            if (index === 0) {
-              iframe.src = link.url;
-            }
-          });
-          window.addEventListener('message', function (event) {
-            var message = event.data.pluginMessage;
-            if (message.type === "show-properties") {
-              var html = "";
-              for (var key in message.props) {
-                html += "<div><b>" + key + ":</b> " + message.props[key] + "</div>";
-              }
-              properties.innerHTML = html;
-            }
-            if (message.type === "clear-properties") {
-              properties.innerHTML = "Hover a text layer to see properties";
-            }
-          });
-        </script>
-      </body>
-      </html>
-    `;
+    const indexHtmlContent = `<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"UTF-8\"><title>Exported Frames</title><style>body { margin: 0; height: 100vh; display: flex; overflow: hidden; font-family: sans-serif; } #sidebar { width: 200px; background: #f2f2f2; padding: 20px; box-sizing: border-box; overflow-y: auto; } #viewer { flex: 1; background: #ffffff; display: flex; align-items: center; justify-content: center; } #properties { width: 300px; background: #fafafa; overflow-y: auto; padding: 10px; border-left: 1px solid #ccc; } iframe { width: 100%; height: 100%; border: none; } a { display: block; margin-bottom: 0px; color: #333; text-decoration: none; font-size: 16px; } a:hover { text-decoration: underline; } p { margin: 0 0 10px 0; color: #999; font-size: 11px; }</style></head><body><div id=\"sidebar\"></div><div id=\"viewer\"><iframe id=\"frame-viewer\" src=\"\"></iframe></div><div id=\"properties\">Hover a text layer to see properties</div><script>var links = ${JSON.stringify(linkArrayForScript)}; var sidebar = document.getElementById('sidebar'); var iframe = document.getElementById('frame-viewer'); var properties = document.getElementById('properties'); links.forEach(function (link, index) { var a = document.createElement('a'); a.href = \"#\"; a.textContent = link.name; a.onclick = function () { iframe.src = link.url; properties.innerHTML = \"Hover a text layer to see properties\"; }; sidebar.appendChild(a); var p = document.createElement('p'); p.textContent = link.page; sidebar.appendChild(p); if (index === 0) iframe.src = link.url; }); window.addEventListener('message', function (event) { var message = event.data.pluginMessage; if (message.type === \"show-properties\") { var html = \"\"; for (var key in message.props) html += \"<div><b>\" + key + \":</b> \" + message.props[key] + \"</div>\"; properties.innerHTML = html; } if (message.type === \"clear-properties\") { properties.innerHTML = \"Hover a text layer to see properties\"; } });</script></body></html>`;
 
     files["index.html"] = indexHtmlContent;
-
-    figma.ui.postMessage({ type: "download", files: files });
+    figma.ui.postMessage({ type: "download", files });
   }
 };
+
+function getAllTopFrames() {
+  const frames = [];
+  for (const page of figma.root.children) {
+    if (page.type === 'PAGE') {
+      for (const node of page.children) {
+        if (node.type === 'FRAME') {
+          frames.push({ id: node.id, name: `${page.name} / ${node.name}`, pageId: page.id });
+        }
+      }
+    }
+  }
+  return frames;
+}
 
 function sanitizeFilename(name) {
   return name.replace(/[<>:"/\\|?*]/g, "").replace(/\s+/g, "_");
