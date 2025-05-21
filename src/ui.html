@@ -10,38 +10,121 @@
       background: #fff;
       display: flex;
       flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      height: 100vh;
+      align-items: stretch;
+      padding: 20px;
       font-family: sans-serif;
     }
-    #export {
+    #controls {
+      display: flex;
+      gap: 10px;
+      justify-content: space-between;
       margin-bottom: 10px;
+    }
+    #export, #select-all, #refresh {
       padding: 10px 20px;
+    }
+    #frame-list {
+      width: 100%;
+      max-height: 400px;
+      overflow-y: auto;
+      border: 1px solid #ccc;
+      padding: 10px;
+      box-sizing: border-box;
+      margin-bottom: 10px;
+    }
+    .page-group {
+      margin-bottom: 10px;
+      border-bottom: 1px solid #ddd;
+    }
+    .page-title {
+      font-weight: bold;
+      margin: 5px 0;
+      cursor: pointer;
+    }
+    .frame-items {
+      padding-left: 10px;
+    }
+    .frame-items.hidden {
+      display: none;
+    }
+    label {
+      display: flex;
+      align-items: center;
+      font-size: 14px;
+      margin-bottom: 4px;
+    }
+    input[type="checkbox"] {
+      margin-right: 8px;
     }
   </style>
 </head>
 <body>
-  <button id="export" disabled>Export</button>
-  <span>v0.0.9</span>
+  <div id="controls">
+    <button id="select-all">Select All</button>
+    <button id="refresh">🔁 Refresh</button>
+    <button id="export" disabled>Export</button>
+  </div>
+  <div id="frame-list"></div>
+  <span>v0.0.10</span>
 
   <script>
     const exportButton = document.getElementById('export');
+    const selectAllButton = document.getElementById('select-all');
+    const refreshButton = document.getElementById('refresh');
+    const frameListContainer = document.getElementById('frame-list');
+    let allFrames = [];
 
     window.onmessage = function(event) {
-      const { type, enabled, files } = event.data.pluginMessage;
-      if (type === 'enable-export') {
-        exportButton.disabled = !enabled;
+      const { type, enabled, files, frames } = event.data.pluginMessage;
+
+      if (type === 'show-frame-list') {
+        exportButton.disabled = false;
+        frameListContainer.innerHTML = '';
+        allFrames = frames;
+
+        const pageMap = {};
+        frames.forEach(frame => {
+          const [pageName, frameName] = frame.name.split(" / ");
+          if (!pageMap[pageName]) pageMap[pageName] = [];
+          pageMap[pageName].push({ id: frame.id, name: frameName });
+        });
+
+        Object.entries(pageMap).forEach(([page, frameList]) => {
+          const groupDiv = document.createElement('div');
+          groupDiv.className = 'page-group';
+
+          const title = document.createElement('div');
+          title.className = 'page-title';
+          title.textContent = `▶ ${page}`;
+          title.addEventListener('click', () => {
+            content.classList.toggle('hidden');
+            title.textContent = content.classList.contains('hidden') ? `▶ ${page}` : `▼ ${page}`;
+          });
+
+          const content = document.createElement('div');
+          content.className = 'frame-items';
+
+          frameList.forEach(frame => {
+            const label = document.createElement('label');
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.value = frame.id;
+            label.appendChild(checkbox);
+            label.appendChild(document.createTextNode(frame.name));
+            content.appendChild(label);
+          });
+
+          groupDiv.appendChild(title);
+          groupDiv.appendChild(content);
+          frameListContainer.appendChild(groupDiv);
+        });
       }
+
       if (type === 'download') {
         const zip = new JSZip();
         for (const filename in files) {
           const fileData = files[filename];
-          if (typeof fileData === "string") {
-            zip.file(filename, fileData);
-          } else {
-            zip.file(filename, fileData);
-          }
+          zip.file(filename, fileData);
         }
         zip.generateAsync({ type: "blob" })
           .then(function(content) {
@@ -55,8 +138,25 @@
       }
     };
 
-    exportButton.onclick = function() {
-      parent.postMessage({ pluginMessage: { type: 'export' } }, '*');
+    exportButton.onclick = function () {
+      const checkedBoxes = frameListContainer.querySelectorAll('input[type="checkbox"]:checked');
+      const selectedIds = Array.from(checkedBoxes).map(cb => cb.value);
+      if (selectedIds.length === 0) {
+        alert("Please select at least one frame to export.");
+        return;
+      }
+      parent.postMessage({ pluginMessage: { type: 'export', selectedIds } }, '*');
+    };
+
+    selectAllButton.onclick = function () {
+      const checkboxes = frameListContainer.querySelectorAll('input[type="checkbox"]');
+      const allSelected = Array.from(checkboxes).every(cb => cb.checked);
+      checkboxes.forEach(cb => cb.checked = !allSelected);
+      selectAllButton.textContent = allSelected ? "Select All" : "Deselect All";
+    };
+
+    refreshButton.onclick = function () {
+      parent.postMessage({ pluginMessage: { type: 'refresh-frames' } }, '*');
     };
   </script>
 </body>

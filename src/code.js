@@ -25,7 +25,6 @@ figma.ui.onmessage = async (msg) => {
 
     const files = {};
     const linkArrayForScript = [];
-
     for (const [pageId, frames] of pageGroupedFrames.entries()) {
       const page = frames[0].parent;
       const pageName = sanitizeFilename(page.name);
@@ -39,8 +38,15 @@ figma.ui.onmessage = async (msg) => {
         const frameIndex = String(i + 1).padStart(3, '0');
         const finalName = `${pageIndex}-${pageName}-${frameIndex}-${frameName}`;
 
-        const exportOptions = { format: "PNG", constraint: { type: "SCALE", value: 2 } };
-        const pngBytes = await frame.exportAsync(exportOptions);
+        const exportOptions = { format: "PNG", constraint: { type: "SCALE", value: 1 } };
+
+        let pngBytes;
+        try {
+          pngBytes = await frame.exportAsync(exportOptions);
+        } catch (e) {
+          console.error(`❌ Export failed for frame: ${frame.name} (${frame.id})`, e);
+          continue;
+        }
 
         const frameWidth = frame.width;
         const frameHeight = frame.height;
@@ -59,18 +65,17 @@ figma.ui.onmessage = async (msg) => {
             return `data-${attrName}="${escapeHTML(String(value))}"`;
           }).join(' ');
 
-          return `<div class=\"text-layer\" style=\"${styles}\" ${attributes}></div>`;
+          return `<div class="text-layer" style="${styles}" ${attributes}></div>`;
         }).join('\n');
-
-        const htmlContent = `<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"UTF-8\"><title>${finalName}</title><style>body, html { margin: 0; padding: 0; width: 100vw; height: 100vh; overflow: hidden; background: #fff; display: grid; place-items: center; } #topbar { position: absolute; top: 0; width: 100%; background: #f2f2f2; padding: 8px; font-size: 14px; border-bottom: 1px solid #ccc; display: flex; justify-content: center; z-index: 10; } #frame-container { position: relative; box-shadow: 0 1px 5px #d9d9d9; } #background-image { display: block; max-width: none; } .text-layer { position: absolute; } .text-layer:hover { cursor: pointer; }</style></head><body><div id=\"topbar\"><label>Zoom: <select id=\"zoom-select\"><option value=\"0.25\">25%</option><option value=\"0.33\">33%</option><option value=\"0.5\">50%</option><option value=\"0.75\">75%</option><option value=\"1\" selected>100%</option><option value=\"1.25\">125%</option><option value=\"1.5\">150%</option><option value=\"2\">200%</option></select></label></div><div id=\"frame-container\"><img id=\"background-image\" src=\"../Thumbnails/${finalName}.png\" alt=\"${finalName}\">${textDivs}</div><script>const image = document.getElementById('background-image'); const zoomSelect = document.getElementById('zoom-select'); function applyZoom() { const scale = parseFloat(zoomSelect.value); image.style.width = (scale * image.naturalWidth / 2) + 'px'; } zoomSelect.addEventListener('change', applyZoom); window.addEventListener('load', applyZoom); var lockedLayer = null; var layers = document.querySelectorAll('.text-layer'); layers.forEach(function (layer) { layer.addEventListener('mouseenter', function () { layer.style.border = '1px solid yellow'; }); layer.addEventListener('mouseleave', function () { if (lockedLayer === layer) { layer.style.border = '1px solid red'; } else { layer.style.border = 'none'; } }); layer.addEventListener('click', function (e) { e.stopPropagation(); if (lockedLayer) { lockedLayer.style.border = 'none'; } lockedLayer = layer; layer.style.border = '1px solid red'; sendProperties(layer); }); }); window.addEventListener('click', function () { if (lockedLayer) { lockedLayer.style.border = 'none'; lockedLayer = null; clearProperties(); } }); function sendProperties(layer) { var props = {}; for (var attr of layer.attributes) { if (attr.name.startsWith('data-') && attr.value !== "") { var key = attr.name.replace('data-', '').split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' '); props[key] = attr.value; } } parent.postMessage({ pluginMessage: { type: \"show-properties\", props: props } }, '*'); } function clearProperties() { parent.postMessage({ pluginMessage: { type: \"clear-properties\" } }, '*'); }</script></body></html>`;
+        const htmlContent = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>${finalName}</title><style>body, html { margin: 0; padding: 0; width: 100vw; height: 100vh; overflow: hidden; background: #fff; display: grid; place-items: center; } #topbar { position: absolute; top: 0; width: 100%; background: #f2f2f2; padding: 8px; font-size: 14px; border-bottom: 1px solid #ccc; display: flex; justify-content: center; z-index: 10; } #frame-container { position: relative; box-shadow: 0 1px 5px #d9d9d9; } #background-image { display: block; max-width: none; } .text-layer { position: absolute; } .text-layer:hover { cursor: pointer; }</style></head><body><div id="topbar"><label>Zoom: <select id="zoom-select"><option value="0.25">25%</option><option value="0.33">33%</option><option value="0.5">50%</option><option value="0.75">75%</option><option value="1" selected>100%</option><option value="1.25">125%</option><option value="1.5">150%</option><option value="2">200%</option></select></label></div><div id="frame-container"><img id="background-image" src="../Thumbnails/${finalName}.png" alt="${finalName}">${textDivs}</div><script>const image = document.getElementById('background-image'); const zoomSelect = document.getElementById('zoom-select'); function applyZoom() { const scale = parseFloat(zoomSelect.value); image.style.width = (scale * image.naturalWidth / 2) + 'px'; } zoomSelect.addEventListener('change', applyZoom); window.addEventListener('load', applyZoom); var lockedLayer = null; var layers = document.querySelectorAll('.text-layer'); layers.forEach(function (layer) { layer.addEventListener('mouseenter', function () { layer.style.border = '1px solid yellow'; }); layer.addEventListener('mouseleave', function () { if (lockedLayer === layer) { layer.style.border = '1px solid red'; } else { layer.style.border = 'none'; } }); layer.addEventListener('click', function (e) { e.stopPropagation(); if (lockedLayer) { lockedLayer.style.border = 'none'; } lockedLayer = layer; layer.style.border = '1px solid red'; sendProperties(layer); }); }); window.addEventListener('click', function () { if (lockedLayer) { lockedLayer.style.border = 'none'; lockedLayer = null; clearProperties(); } }); function sendProperties(layer) { var props = {}; for (var attr of layer.attributes) { if (attr.name.startsWith('data-') && attr.value !== "") { var key = attr.name.replace('data-', '').split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' '); props[key] = attr.value; } } parent.postMessage({ pluginMessage: { type: "show-properties", props: props } }, '*'); } function clearProperties() { parent.postMessage({ pluginMessage: { type: "clear-properties" } }, '*'); }</script></body></html>`;
 
         files[`Thumbnails/${finalName}.png`] = pngBytes;
         files[`Frames/${finalName}.html`] = htmlContent;
         linkArrayForScript.push({ name: frameName, page: page.name, url: `Frames/${finalName}.html` });
       }
     }
-
-    const indexHtmlContent = `<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"UTF-8\"><title>Exported Frames</title><style>body { margin: 0; height: 100vh; display: flex; overflow: hidden; font-family: sans-serif; } #sidebar { width: 200px; background: #f2f2f2; padding: 20px; box-sizing: border-box; overflow-y: auto; } #viewer { flex: 1; background: #ffffff; display: flex; align-items: center; justify-content: center; } #properties { width: 300px; background: #fafafa; overflow-y: auto; padding: 10px; border-left: 1px solid #ccc; } iframe { width: 100%; height: 100%; border: none; } a { display: block; margin-bottom: 0px; color: #333; text-decoration: none; font-size: 16px; } a:hover { text-decoration: underline; } p { margin: 0 0 10px 0; color: #999; font-size: 11px; }</style></head><body><div id=\"sidebar\"></div><div id=\"viewer\"><iframe id=\"frame-viewer\" src=\"\"></iframe></div><div id=\"properties\">Hover a text layer to see properties</div><script>var links = ${JSON.stringify(linkArrayForScript)}; var sidebar = document.getElementById('sidebar'); var iframe = document.getElementById('frame-viewer'); var properties = document.getElementById('properties'); links.forEach(function (link, index) { var a = document.createElement('a'); a.href = \"#\"; a.textContent = link.name; a.onclick = function () { iframe.src = link.url; properties.innerHTML = \"Hover a text layer to see properties\"; }; sidebar.appendChild(a); var p = document.createElement('p'); p.textContent = link.page; sidebar.appendChild(p); if (index === 0) iframe.src = link.url; }); window.addEventListener('message', function (event) { var message = event.data.pluginMessage; if (message.type === \"show-properties\") { var html = \"\"; for (var key in message.props) html += \"<div><b>\" + key + \":</b> \" + message.props[key] + \"</div>\"; properties.innerHTML = html; } if (message.type === \"clear-properties\") { properties.innerHTML = \"Hover a text layer to see properties\"; } });</script></body></html>`;
+    const indexHtmlContent = `<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><title>Exported Frames</title><style>body { margin: 0; height: 100vh; display: flex; overflow: hidden; font-family: sans-serif; } #sidebar { width: 200px; background: #f2f2f2; padding: 20px; box-sizing: border-box; overflow-y: auto; } #viewer { flex: 1; background: #ffffff; display: flex; align-items: center; justify-content: center; } #properties { width: 300px; background: #fafafa; overflow-y: auto; padding: 10px; border-left: 1px solid #ccc; } iframe { width: 100%; height: 100%; border: none; } a { display: block; margin-bottom: 0px; color: #333; text-decoration: none; font-size: 16px; } a:hover { text-decoration: underline; } p { margin: 0 0 10px 0; color: #999; font-size: 11px; }</style></head><body><div id="sidebar"></div><div id="viewer"><iframe id="frame-viewer" src=""></iframe></div><div id="properties">Hover a text layer to see properties</div><script>var links = ${JSON.stringify(linkArrayForScript)}; var sidebar = document.getElementById('sidebar'); var iframe = document.getElementById('frame-viewer'); var properties = document.getElementById('properties'); links.forEach(function (link, index) { var a = document.createElement('a'); a.href = "#"; a.textContent = link.name; a.onclick = function () { iframe.src = link.url; properties.innerHTML = "Hover a text layer to see properties"; }; sidebar.appendChild(a); var p = document.createElement('p'); p.textContent = link.page; sidebar.appendChild(p); if (index === 0) iframe.src = link.url; }); window.addEventListener('message', function (event) { if (!event.data || typeof event.data !== "object" || !event.data.pluginMessage) return; const message = event.data.pluginMessage; if (message.type === "show-properties") { let html = ""; for (let key in message.props) { html += "<div><b>" + key + ":</b> " + message.props[key] + "</div>"; } properties.innerHTML = html; } if (message.type === "clear-properties") { properties.innerHTML = "Hover a text layer to see properties"; } });</script></body></html>`;
 
     files["index.html"] = indexHtmlContent;
     figma.ui.postMessage({ type: "download", files });
@@ -110,7 +115,14 @@ async function findTargetLayers(node) {
     } catch (e) {
       console.log('Font load failed or layer error, skipping node');
     }
-  } else if ("children" in node) {
+  }
+
+  if (node.type === "FRAME" && !node.locked && node.visible !== false) {
+    const props = await extractLayerProps(node);
+    if (props) layers.push(props);
+  }
+
+  if ("children" in node) {
     for (const child of node.children) {
       const childLayers = await findTargetLayers(child);
       layers.push(...childLayers);
@@ -160,7 +172,7 @@ async function extractLayerProps(node) {
       commonProps.Width = node.strokeWeight;
     }
     if (commonProps.Height <= 0 && node.strokeWeight) {
-    commonProps.Height = node.strokeWeight;
+      commonProps.Height = node.strokeWeight;
     }
   }
 
@@ -189,16 +201,16 @@ async function extractLayerProps(node) {
         strokeColorAlpha = ` (${Math.round(node.strokes[0].opacity * 100)}%)`;
       }
     }
-  
+
     typeProps["Stroke Color"] = strokeColor + strokeColorAlpha;
-  
+
     if (strokeColor !== "N/A") {
       Object.assign(typeProps, {
         "Stroke Weight": node.strokeWeight !== undefined ? node.strokeWeight : "N/A",
         "Dash Pattern": (node.dashPattern && node.dashPattern.length > 0) ? node.dashPattern.join(", ") : "none"
       });
     }
-  
+
     if ("cornerRadius" in node) {
       if (typeof node.cornerRadius === 'number') {
         typeProps["Corner Radius"] = node.cornerRadius;
@@ -209,11 +221,16 @@ async function extractLayerProps(node) {
         typeProps["Bottom Right Radius"] = node.bottomRightRadius || 0;
       }
     }
-  
+
     if (node.type === "STAR") {
       typeProps["Point Count"] = node.pointCount;
       typeProps["Inner Radius"] = (node.innerRadius * 100).toFixed(1) + "%";
     }
+  } else if (node.type === "FRAME") {
+    typeProps = {
+      "Is Nested Frame": "true",
+      "Child Count": (node.children && node.children.length) || 0
+    };
   }
 
   props["* Common Properties"] = "---";
