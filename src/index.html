@@ -40,6 +40,13 @@
     a:hover {
       text-decoration: underline;
     }
+    .layer-suspect {
+      position: absolute;
+    }
+    .layer-suspect:hover {
+      cursor: pointer;
+      border: 1px solid yellow;
+    }
   </style>
 </head>
 <body>
@@ -52,7 +59,7 @@
   <script>
     const links = [
     ];
-
+    
     const sidebar = document.getElementById('sidebar');
     const iframe = document.getElementById('frame-viewer');
 
