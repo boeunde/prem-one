@@ -73,10 +73,48 @@ figma.ui.onmessage = async (msg) => {
           }
         }
 
-        function renderLayerTree(layer, parentSize) {
+        function renderLayerTree(layer, parentSize, frameOffset) {
+          var isScreen = layer["__isScreen"];
+
           var parentWidth = parentSize ? parentSize.width : frameWidth;
           var parentHeight = parentSize ? parentSize.height : frameHeight;
+
+          var renderX = layer["__visualX"] !== undefined ? layer["__visualX"] : layer.X;
+          var renderY = layer["__visualY"] !== undefined ? layer["__visualY"] : layer.Y;
+          var renderWidth = layer["__visualWidth"] !== undefined ? layer["__visualWidth"] : layer.Width;
+          var renderHeight = layer["__visualHeight"] !== undefined ? layer["__visualHeight"] : layer.Height;
+
+          var leftPercent = isScreen ? 0 : (renderX / parentWidth) * 100;
+          var topPercent = isScreen ? 0 : (renderY / parentHeight) * 100;
+          var widthPercent = (renderWidth / parentWidth) * 100;
+          var heightPercent = (renderHeight / parentHeight) * 100;
+
+          var frameLeft = frameOffset ? frameOffset.x : 0;
+          var frameTop = frameOffset ? frameOffset.y : 0;
+
+          var relativeX = renderX - frameLeft;
+          var relativeY = renderY - frameTop;
+
+          var leftPercent = isScreen ? 0 : (relativeX / parentWidth) * 100;
+          var topPercent = isScreen ? 0 : (relativeY / parentHeight) * 100;
+
+          console.log("[DEBUG] Layer:", layer.Layername);
+          console.log({
+            renderX: renderX,
+            frameLeft: frameLeft,
+            relativeX: relativeX,
+            parentWidth: parentWidth,
+            leftPercent: leftPercent.toFixed(2) + "%",
+            renderY: renderY,
+            frameTop: frameTop,
+            relativeY: relativeY,
+            parentHeight: parentHeight,
+            topPercent: topPercent.toFixed(2) + "%"
+          });
+
+
           var layerType = "layer";
+
           if (layer["* TEXT Properties"]) layerType = "text";
           else if (layer["* RECTANGLE Properties"]) layerType = "rectangle";
           else if (layer["* VECTOR Properties"]) layerType = "vector";
@@ -86,13 +124,7 @@ figma.ui.onmessage = async (msg) => {
           else if (layer["* STAR Properties"]) layerType = "star";
           else if (layer["* FRAME Properties"]) layerType = "frame";
 
-          var isScreen = layer["__isScreen"];
           var className = "layer-" + layerType + (isScreen ? " screen" : " layer-suspect");
-
-          var leftPercent = isScreen ? 0 : (layer.X / parentWidth) * 100;
-          var topPercent = isScreen ? 0 : (layer.Y / parentHeight) * 100;
-          var widthPercent = (layer.Width / parentWidth) * 100;
-          var heightPercent = (layer.Height / parentHeight) * 100;
 
           var styles = (
             "position: absolute; top: " + topPercent + "%; left: " + leftPercent +
@@ -111,10 +143,14 @@ figma.ui.onmessage = async (msg) => {
           }
 
           var childrenHTML = "";
+
           for (var j = 0; j < layer.children.length; j++) {
             childrenHTML += renderLayerTree(layer.children[j], {
-              width: layer.Width,
-              height: layer.Height
+              width: renderWidth,
+              height: renderHeight
+            }, {
+              x: renderX,
+              y: renderY
             });
           }
 
@@ -123,7 +159,13 @@ figma.ui.onmessage = async (msg) => {
 
         var textDivs = "";
         for (var k = 0; k < treeRoots.length; k++) {
-          textDivs += renderLayerTree(treeRoots[k]) + "\n";
+          textDivs += renderLayerTree(treeRoots[k], {
+            width: frame.width,
+            height: frame.height
+          }, {
+            x: frame.absoluteBoundingBox.x,
+            y: frame.absoluteBoundingBox.y
+          });
         }
 
         const htmlContent = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>${finalName}</title><style>body, html { margin: 0; padding: 0; width: 100vw; height: 100vh; overflow: hidden; background: #fff; display: grid; place-items: center; } #topbar { position: absolute; top: 0; width: 100%; background: #f2f2f2; padding: 8px; font-size: 14px; border-bottom: 1px solid #ccc; display: flex; justify-content: center; z-index: 10; } #frame-container { position: relative; box-shadow: 0 1px 5px #d9d9d9; } #background-image { display: block; max-width: none; } .layer-suspect { position: absolute; } .layer-suspect:hover { cursor: pointer; }</style></head><body><div id="topbar"><label>Zoom: <select id="zoom-select"><option value="0.25">25%</option><option value="0.33">33%</option><option value="0.5">50%</option><option value="0.75">75%</option><option value="1" selected>100%</option><option value="1.25">125%</option><option value="1.5">150%</option><option value="2">200%</option></select></label></div><div id="frame-container"><img id="background-image" src="../Thumbnails/${finalName}.png" alt="${finalName}">${textDivs}</div>
@@ -228,8 +270,47 @@ figma.ui.onmessage = async (msg) => {
         linkArrayForScript.push({ name: frameName, page: page.name, url: `Frames/${finalName}.html` });
       }
     }
-    const indexHtmlContent = `<!DOCTYPE html>
-<html lang="en"><head><meta charset="UTF-8"><title>Exported Frames</title><style>body { margin: 0; height: 100vh; display: flex; overflow: hidden; font-family: sans-serif; } #sidebar { width: 200px; background: #f2f2f2; padding: 20px; box-sizing: border-box; overflow-y: auto; } #viewer { flex: 1; background: #ffffff; display: flex; align-items: center; justify-content: center; } #properties { width: 300px; background: #fafafa; overflow-y: auto; padding: 10px; border-left: 1px solid #ccc; } iframe { width: 100%; height: 100%; border: none; } a { display: block; margin-bottom: 0px; color: #333; text-decoration: none; font-size: 16px; } a:hover { text-decoration: underline; } p { margin: 0 0 10px 0; color: #999; font-size: 11px; }</style></head><body><div id="sidebar"></div><div id="viewer"><iframe id="frame-viewer" src=""></iframe></div><div id="properties">Hover a text layer to see properties</div><script>var links = ${JSON.stringify(linkArrayForScript)}; var sidebar = document.getElementById('sidebar'); var iframe = document.getElementById('frame-viewer'); var properties = document.getElementById('properties'); links.forEach(function (link, index) { var a = document.createElement('a'); a.href = "#"; a.textContent = link.name; a.onclick = function () { iframe.src = link.url; properties.innerHTML = "Hover a text layer to see properties"; }; sidebar.appendChild(a); var p = document.createElement('p'); p.textContent = link.page; sidebar.appendChild(p); if (index === 0) iframe.src = link.url; }); window.addEventListener('message', function (event) { if (!event.data || typeof event.data !== "object" || !event.data.pluginMessage) return; const message = event.data.pluginMessage; if (message.type === "show-properties") { let html = ""; for (let key in message.props) { html += "<div><b>" + key + ":</b> " + message.props[key] + "</div>"; } properties.innerHTML = html; } if (message.type === "clear-properties") { properties.innerHTML = "Hover a text layer to see properties"; } });</script></body></html>`;
+    const indexHtmlContent = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Exported Frames</title><style>body { margin: 0; height: 100vh; display: flex; overflow: hidden; font-family: sans-serif; } #sidebar { width: 200px; background: #f2f2f2; padding: 20px; box-sizing: border-box; overflow-y: auto; } #viewer { flex: 1; background: #ffffff; display: flex; align-items: center; justify-content: center; } #properties { width: 300px; background: #fafafa; overflow-y: auto; padding: 10px; border-left: 1px solid #ccc; } iframe { width: 100%; height: 100%; border: none; } a { display: block; margin-bottom: 0px; color: #333; text-decoration: none; font-size: 16px; } a:hover { text-decoration: underline; } p { margin: 0 0 10px 0; color: #999; font-size: 11px; }</style></head><body><div id="sidebar"></div><div id="viewer"><iframe id="frame-viewer" src=""></iframe></div><div id="properties">Hover a text layer to see properties</div>
+      <script>
+        var links = ${JSON.stringify(linkArrayForScript)}; 
+        var sidebar = document.getElementById('sidebar'); 
+        var iframe = document.getElementById('frame-viewer'); 
+        var properties = document.getElementById('properties'); 
+
+        links.forEach(function (link, index) { 
+          var a = document.createElement('a'); 
+          a.href = "#"; a.textContent = link.name; 
+          a.onclick = function () { 
+          iframe.src = link.url; 
+          properties.innerHTML = "Hover a text layer to see properties"; 
+        }; 
+
+        sidebar.appendChild(a); 
+
+        var p = document.createElement('p'); 
+        p.textContent = link.page; sidebar.appendChild(p); 
+        if (index === 0) iframe.src = link.url; }); 
+          window.addEventListener('message', function (event) { 
+          if (!event.data || typeof event.data !== "object" || !event.data.pluginMessage) return; 
+
+          const message = event.data.pluginMessage; 
+
+            if (message.type === "show-properties") { 
+              let html = ""; 
+
+              for (let key in message.props) { 
+                html += "<div><b>" + key + ":</b> " + message.props[key] + "</div>"; 
+              } 
+
+            properties.innerHTML = html; 
+            } 
+
+          if (message.type === "clear-properties") { 
+          properties.innerHTML = "Hover a text layer to see properties"; 
+          } 
+        });
+      </script>
+    </body></html>`;
 
     files["index.html"] = indexHtmlContent;
     figma.ui.postMessage({ type: "download", files });
@@ -284,65 +365,55 @@ async function findTargetLayers(node, rootFrameId) {
 async function extractLayerProps(node, rootFrameId = null) {
   let props = {};
   const isScreen = (node.type === "FRAME" && node.id === rootFrameId);
-  const X = isScreen ? 0 : node.x;
-  const Y = isScreen ? 0 : node.y;
 
   const baseProps = {
     Layername: node.name || "",
-    X: X,
-    Y: Y,
+    X: node.x,
+    Y: node.y,
     Width: node.width,
     Height: node.height,
   };
 
-  if (isScreen) {
-    props = {};
-    for (const key in baseProps) {
-      props[key] = baseProps[key];
-    }
-  } else {
-    let colorHex = "N/A";
-    let colorOpacityPercent = "";
-    let tips = [];
-    let commonProps = {};
-    let typeProps = {};
+  if (node.absoluteBoundingBox) {
+    baseProps["__visualX"] = node.absoluteBoundingBox.x;
+    baseProps["__visualY"] = node.absoluteBoundingBox.y;
+    baseProps["__visualWidth"] = node.absoluteBoundingBox.width;
+    baseProps["__visualHeight"] = node.absoluteBoundingBox.height;
 
-    if (node.fills && node.fills.length > 0 && node.fills[0]) {
+  } else {
+    baseProps["__visualX"] = node.x;
+    baseProps["__visualY"] = node.y;
+    baseProps["__visualWidth"] = node.width;
+    baseProps["__visualHeight"] = node.height;
+  }
+
+  if (isScreen) {
+    for (const key in baseProps) props[key] = baseProps[key];
+  } else {
+    let colorHex = "N/A", colorOpacityPercent = "", tips = [], commonProps = {}, typeProps = {};
+
+    if (node.fills && node.fills[0]) {
       const fill = node.fills[0];
       if (fill.type === "SOLID" && fill.color) {
         colorHex = rgbToHex(fill.color);
-        if (typeof fill.opacity === "number") {
-          colorOpacityPercent = ` (${Math.round(fill.opacity * 100)}%)`;
-        }
+        if (typeof fill.opacity === "number") colorOpacityPercent = ` (${Math.round(fill.opacity * 100)}%)`;
       } else {
         colorHex = fill.type;
       }
-
-      if (node.fills.length > 1) {
-        tips.push("Fill이 2개 이상 적용되어 있습니다.");
-      }
+      if (node.fills.length > 1) tips.push("Fill이 2개 이상 적용되어 있습니다.");
     }
 
-    commonProps = {};
-    for (const key in baseProps) {
-      commonProps[key] = baseProps[key];
-    }
+    for (const key in baseProps) commonProps[key] = baseProps[key];
     commonProps["Rotation"] = node.rotation !== undefined ? Math.round(node.rotation) + "°" : "0°";
     commonProps["Color"] = colorHex + colorOpacityPercent;
-    commonProps["Opacity"] = (node.opacity !== undefined ? Math.round(node.opacity * 100) + "%" : "100%");
+    commonProps["Opacity"] = node.opacity !== undefined ? Math.round(node.opacity * 100) + "%" : "100%";
 
     if (["LINE", "VECTOR"].includes(node.type)) {
-      if (commonProps.Width <= 0 && node.strokeWeight) {
-        commonProps.Width = node.strokeWeight;
-      }
-      if (commonProps.Height <= 0 && node.strokeWeight) {
-        commonProps.Height = node.strokeWeight;
-      }
+      if (commonProps.Width <= 0 && node.strokeWeight) commonProps.Width = node.strokeWeight;
+      if (commonProps.Height <= 0 && node.strokeWeight) commonProps.Height = node.strokeWeight;
     }
 
-    if (node.rotation && Math.round(node.rotation) !== 0) {
-      tips.push("Rotation이 적용되어 있습니다.");
-    }
+    if (node.rotation && Math.round(node.rotation) !== 0) tips.push("Rotation이 적용되어 있습니다.");
 
     if (node.type === "TEXT") {
       typeProps = {
@@ -357,23 +428,22 @@ async function extractLayerProps(node, rootFrameId = null) {
         "Text Auto Resize": node.textAutoResize || "NONE"
       };
     } else if (["VECTOR", "RECTANGLE", "ELLIPSE", "POLYGON", "STAR"].includes(node.type)) {
-      let strokeColor = "N/A";
-      let strokeColorAlpha = "";
-      if (node.strokes && node.strokes[0] && node.strokes[0].type === "SOLID") {
+      let strokeColor = "N/A", strokeAlpha = "";
+      if (
+        node.strokes &&
+        node.strokes.length > 0 &&
+        node.strokes[0] &&
+        node.strokes[0].type === "SOLID"
+      ) {
         strokeColor = rgbToHex(node.strokes[0].color);
-        if (typeof node.strokes[0].opacity === "number") {
-          strokeColorAlpha = ` (${Math.round(node.strokes[0].opacity * 100)}%)`;
-        }
+        if (typeof node.strokes[0].opacity === "number") strokeAlpha = ` (${Math.round(node.strokes[0].opacity * 100)}%)`;
       }
 
-      typeProps["Stroke Color"] = strokeColor + strokeColorAlpha;
-
-      if (strokeColor !== "N/A") {
-        Object.assign(typeProps, {
-          "Stroke Weight": node.strokeWeight !== undefined ? node.strokeWeight : "N/A",
-          "Dash Pattern": (node.dashPattern && node.dashPattern.length > 0) ? node.dashPattern.join(", ") : "none"
-        });
-      }
+      typeProps["Stroke Color"] = strokeColor + strokeAlpha;
+      if (strokeColor !== "N/A") Object.assign(typeProps, {
+        "Stroke Weight": (node.strokeWeight !== undefined && node.strokeWeight !== null) ? node.strokeWeight : "N/A",
+        "Dash Pattern": (node.dashPattern && node.dashPattern.length > 0) ? node.dashPattern.join(", ") : "none"
+      });
 
       if ("cornerRadius" in node) {
         if (typeof node.cornerRadius === 'number') {
@@ -393,20 +463,16 @@ async function extractLayerProps(node, rootFrameId = null) {
     } else if (node.type === "FRAME") {
       typeProps = {
         "Is Nested Frame": "true",
-        "Child Count": (node.children && node.children.length) || 0
+        "Child Count": (node.children && node.children.length) ? node.children.length : 0
       };
     }
 
     props["* Common Properties"] = "---";
-    for (const key in commonProps) {
-      props[key] = commonProps[key];
-    }
-
+    props["Width"] = baseProps.Width;
+    props["Height"] = baseProps.Height;
+    for (const key in commonProps) if (key !== "Width" && key !== "Height") props[key] = commonProps[key];
     props[`* ${node.type} Properties`] = "---";
-    for (const key in typeProps) {
-      props[key] = typeProps[key];
-    }
-
+    for (const key in typeProps) props[key] = typeProps[key];
     if (tips.length > 0) {
       props["* Tip"] = "---";
       props["*** Tip"] = tips.join("\n");
