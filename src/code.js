@@ -73,6 +73,8 @@ figma.ui.onmessage = async (msg) => {
           }
         }
 
+        console.log("[TYPE]", layer.Layername, layer["__typeName"]);
+
         function renderLayerTree(layer, parentSize, frameOffset) {
           var isScreen = layer["__isScreen"];
 
@@ -81,8 +83,8 @@ figma.ui.onmessage = async (msg) => {
 
           var renderX = layer["__visualX"] !== undefined ? layer["__visualX"] : layer.X;
           var renderY = layer["__visualY"] !== undefined ? layer["__visualY"] : layer.Y;
-          var renderWidth = layer["__visualWidth"] !== undefined ? layer["__visualWidth"] : layer.Width;
-          var renderHeight = layer["__visualHeight"] !== undefined ? layer["__visualHeight"] : layer.Height;
+          var renderWidth = (layer["__visualWidth"] !== undefined) ? layer["__visualWidth"] : layer.Width;
+          var renderHeight = (layer["__visualHeight"] !== undefined) ? layer["__visualHeight"] : layer.Height;
 
           var leftPercent = isScreen ? 0 : (renderX / parentWidth) * 100;
           var topPercent = isScreen ? 0 : (renderY / parentHeight) * 100;
@@ -98,19 +100,15 @@ figma.ui.onmessage = async (msg) => {
           var leftPercent = isScreen ? 0 : (relativeX / parentWidth) * 100;
           var topPercent = isScreen ? 0 : (relativeY / parentHeight) * 100;
 
-          console.log("[DEBUG] Layer:", layer.Layername);
-          console.log({
-            renderX: renderX,
-            frameLeft: frameLeft,
-            relativeX: relativeX,
-            parentWidth: parentWidth,
-            leftPercent: leftPercent.toFixed(2) + "%",
-            renderY: renderY,
-            frameTop: frameTop,
-            relativeY: relativeY,
-            parentHeight: parentHeight,
-            topPercent: topPercent.toFixed(2) + "%"
-          });
+
+          if (layer["__typeName"] === "LINE" || layer["__typeName"] === "VECTOR") {
+            console.log("[CHECK]", layer.Layername, {
+              __visualWidth: layer["__visualWidth"],
+              __visualHeight: layer["__visualHeight"],
+              Width: layer.Width,
+              Height: layer.Height
+            });
+          }
 
 
           var layerType = "layer";
@@ -374,12 +372,21 @@ async function extractLayerProps(node, rootFrameId = null) {
     Height: node.height,
   };
 
-  if (node.absoluteBoundingBox) {
+  if (node.type === "FRAME" && node.absoluteBoundingBox) {
     baseProps["__visualX"] = node.absoluteBoundingBox.x;
     baseProps["__visualY"] = node.absoluteBoundingBox.y;
     baseProps["__visualWidth"] = node.absoluteBoundingBox.width;
     baseProps["__visualHeight"] = node.absoluteBoundingBox.height;
-
+  } else if (node.absoluteRenderBounds) {
+    baseProps["__visualX"] = node.absoluteRenderBounds.x;
+    baseProps["__visualY"] = node.absoluteRenderBounds.y;
+    baseProps["__visualWidth"] = node.absoluteRenderBounds.width;
+    baseProps["__visualHeight"] = node.absoluteRenderBounds.height;
+  } else if (node.absoluteBoundingBox) {
+    baseProps["__visualX"] = node.absoluteBoundingBox.x;
+    baseProps["__visualY"] = node.absoluteBoundingBox.y;
+    baseProps["__visualWidth"] = node.absoluteBoundingBox.width;
+    baseProps["__visualHeight"] = node.absoluteBoundingBox.height;
   } else {
     baseProps["__visualX"] = node.x;
     baseProps["__visualY"] = node.y;
