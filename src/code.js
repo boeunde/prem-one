@@ -86,10 +86,10 @@ figma.ui.onmessage = async (msg) => {
           var renderWidth = (layer["__visualWidth"] !== undefined) ? layer["__visualWidth"] : layer.Width;
           var renderHeight = (layer["__visualHeight"] !== undefined) ? layer["__visualHeight"] : layer.Height;
 
-          var leftPercent = isScreen ? 0 : (renderX / parentWidth) * 100;
-          var topPercent = isScreen ? 0 : (renderY / parentHeight) * 100;
-          var widthPercent = (renderWidth / parentWidth) * 100;
-          var heightPercent = (renderHeight / parentHeight) * 100;
+          var leftPercent = isScreen ? 0 : formatNumber((relativeX / parentWidth) * 100);
+          var topPercent = isScreen ? 0 : formatNumber((relativeY / parentHeight) * 100);
+          var widthPercent = formatNumber((renderWidth / parentWidth) * 100);
+          var heightPercent = formatNumber((renderHeight / parentHeight) * 100);
 
           var frameLeft = frameOffset ? frameOffset.x : 0;
           var frameTop = frameOffset ? frameOffset.y : 0;
@@ -97,8 +97,8 @@ figma.ui.onmessage = async (msg) => {
           var relativeX = renderX - frameLeft;
           var relativeY = renderY - frameTop;
 
-          var leftPercent = isScreen ? 0 : (relativeX / parentWidth) * 100;
-          var topPercent = isScreen ? 0 : (relativeY / parentHeight) * 100;
+          var leftPercent = isScreen ? 0 : formatNumber((relativeX / parentWidth) * 100);
+          var topPercent = isScreen ? 0 : formatNumber((relativeY / parentHeight) * 100);
 
 
           if (layer["__typeName"] === "LINE" || layer["__typeName"] === "VECTOR") {
@@ -125,8 +125,8 @@ figma.ui.onmessage = async (msg) => {
           var className = "layer-" + layerType + (isScreen ? " screen" : " layer-suspect");
 
           var styles = (
-            "position: absolute; top: " + topPercent + "%; left: " + leftPercent +
-            "%; width: " + widthPercent + "%; height: " + heightPercent +
+            "position: absolute; top: " + Number(topPercent) + "%; left: " +
+            Number(leftPercent) + "%; width: " + Number(widthPercent) + "%; height: " + Number(heightPercent) +
             "%; box-sizing: border-box; pointer-events: auto; border: none;"
           );
 
@@ -135,7 +135,11 @@ figma.ui.onmessage = async (msg) => {
             if (layer.hasOwnProperty(key)) {
               if (key.indexOf("*") !== 0 && key.indexOf("__") !== 0) {
                 var attrName = key.toLowerCase().replace(/ /g, "-");
-                attributes += ' data-' + attrName + '="' + escapeHTML(String(layer[key])) + '"';
+                var value = layer[key];
+                if (typeof value === "number") {
+                  value = formatNumber(value);
+                }
+                attributes += ' data-' + attrName + '="' + escapeHTML(String(value)) + '"';
               }
             }
           }
@@ -372,7 +376,7 @@ async function extractLayerProps(node, rootFrameId = null) {
     Height: node.height,
   };
 
-  if (node.type === "FRAME" && node.absoluteBoundingBox) {
+  if ((node.type === "FRAME" || node.type === "TEXT") && node.absoluteBoundingBox) {
     baseProps["__visualX"] = node.absoluteBoundingBox.x;
     baseProps["__visualY"] = node.absoluteBoundingBox.y;
     baseProps["__visualWidth"] = node.absoluteBoundingBox.width;
@@ -393,6 +397,7 @@ async function extractLayerProps(node, rootFrameId = null) {
     baseProps["__visualWidth"] = node.width;
     baseProps["__visualHeight"] = node.height;
   }
+
 
   if (isScreen) {
     for (const key in baseProps) props[key] = baseProps[key];
@@ -505,4 +510,13 @@ function escapeHTML(text) {
   return text.replace(/[&<>"']/g, function (m) {
     return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m];
   });
+}
+
+function formatNumber(value) {
+  if (typeof value !== "number") return value;
+  if (Math.abs(value) < 0.00001) return 0;
+
+  var fixed = value.toFixed(3);
+  if (fixed.endsWith(".000")) return parseInt(fixed, 10);
+  return parseFloat(fixed);
 }
