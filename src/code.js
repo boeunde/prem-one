@@ -57,7 +57,7 @@ figma.ui.onmessage = async (msg) => {
 
         for (var a = 0; a < targetLayers.length; a++) {
           var layer = targetLayers[a];
-          layer.children = []; // 트리용 children 배열
+          layer.children = [];
 
           idMap[layer["__nodeId"]] = layer;
         }
@@ -88,8 +88,8 @@ figma.ui.onmessage = async (msg) => {
 
           var leftPercent = isScreen ? 0 : formatNumber((relativeX / parentWidth) * 100);
           var topPercent = isScreen ? 0 : formatNumber((relativeY / parentHeight) * 100);
-          var widthPercent = formatNumber((renderWidth / parentWidth) * 100);
-          var heightPercent = formatNumber((renderHeight / parentHeight) * 100);
+          var widthPercent = roundToStepPercent((renderWidth / parentWidth) * 100, 0.25);
+          var heightPercent = roundToStepPercent((renderHeight / parentHeight) * 100, 0.25);
 
           var frameLeft = frameOffset ? frameOffset.x : 0;
           var frameTop = frameOffset ? frameOffset.y : 0;
@@ -100,7 +100,6 @@ figma.ui.onmessage = async (msg) => {
           var leftPercent = isScreen ? 0 : formatNumber((relativeX / parentWidth) * 100);
           var topPercent = isScreen ? 0 : formatNumber((relativeY / parentHeight) * 100);
 
-
           if (layer["__typeName"] === "LINE" || layer["__typeName"] === "VECTOR") {
             console.log("[CHECK]", layer.Layername, {
               __visualWidth: layer["__visualWidth"],
@@ -109,7 +108,6 @@ figma.ui.onmessage = async (msg) => {
               Height: layer.Height
             });
           }
-
 
           var layerType = "layer";
 
@@ -517,6 +515,16 @@ function formatNumber(value) {
   if (Math.abs(value) < 0.00001) return 0;
 
   var fixed = value.toFixed(3);
+  if (fixed.endsWith(".000")) return parseInt(fixed, 10);
+  return parseFloat(fixed);
+}
+
+function roundToStepPercent(value, step) {
+  if (typeof value !== "number") return value;
+  if (Math.abs(value) < 0.00001) return 0;
+
+  var rounded = Math.ceil(value / step) * step;
+  var fixed = rounded.toFixed(3);
   if (fixed.endsWith(".000")) return parseInt(fixed, 10);
   return parseFloat(fixed);
 }
