@@ -78,9 +78,19 @@
     <button id="export" disabled>Export</button>
   </div>
   <div id="frame-list"></div>
-  <span>v0.1.2</span>
+  <span id="plugin-version">v?.?.?</span>
 
   <script>
+    window.addEventListener("message", (event) => {
+      const msg = event.data.pluginMessage;
+      if (!msg || typeof msg !== "object") return;
+
+      if (msg.type === "plugin-version") {
+        const versionLabel = document.getElementById("plugin-version");
+        if (versionLabel) versionLabel.textContent = msg.version;
+      }
+    });
+
     const exportButton = document.getElementById('export');
     const selectAllButton = document.getElementById('select-all');
     const refreshButton = document.getElementById('refresh');
@@ -106,6 +116,7 @@
           const groupDiv = document.createElement('div');
           groupDiv.className = 'page-group';
 
+          const content = document.createElement('div');
           const title = document.createElement('div');
           title.className = 'page-title';
           title.textContent = `▶ ${page}`;
@@ -114,7 +125,6 @@
             title.textContent = content.classList.contains('hidden') ? `▶ ${page}` : `▼ ${page}`;
           });
 
-          const content = document.createElement('div');
           content.className = 'frame-items';
 
           frameList.forEach(frame => {

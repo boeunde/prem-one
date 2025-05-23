@@ -1,4 +1,8 @@
+const PLUGIN_VERSION = "v0.1.3";
+
 figma.showUI(__html__, { width: 400, height: 600 });
+figma.ui.postMessage({ type: "plugin-version", version: PLUGIN_VERSION });
+
 
 figma.ui.onmessage = async (msg) => {
   if (msg.type === "refresh-frames") {
@@ -7,6 +11,13 @@ figma.ui.onmessage = async (msg) => {
   }
 
   if (msg.type === "export") {
+    var exportStartTime = new Date();
+    var exportLog = "";
+    var totalDivCount = 0;
+    var perFrameDivMap = {};
+
+    var exportStartTime = new Date();
+
     const selectedNodes = msg.selectedIds
       .map(id => figma.getNodeById(id))
       .filter(node => node && node.type === "FRAME");
@@ -24,7 +35,10 @@ figma.ui.onmessage = async (msg) => {
     }
 
     const files = {};
+
     const linkArrayForScript = [];
+    let globalFrameIndex = 1;
+
     for (const [pageId, frames] of pageGroupedFrames.entries()) {
       const page = frames[0].parent;
       const pageName = sanitizeFilename(page.name);
@@ -34,15 +48,30 @@ figma.ui.onmessage = async (msg) => {
 
       for (let i = 0; i < frames.length; i++) {
         const frame = frames[i];
+        const frameNameRaw = frame.name;
         const frameName = sanitizeFilename(frame.name);
-        const frameIndex = String(i + 1).padStart(3, '0');
+        const frameIndex = String(globalFrameIndex).padStart(3, '0');
+        globalFrameIndex++;
         const finalName = `${pageIndex}-${pageName}-${frameIndex}-${frameName}`;
 
         const exportOptions = { format: "PNG", constraint: { type: "SCALE", value: 2 } };
+        let pngBytes, thumbnailBytes;
 
-        let pngBytes;
         try {
           pngBytes = await frame.exportAsync(exportOptions);
+
+          var maxThumbnailSize = 128;
+
+          var renderWidth = (frame.absoluteRenderBounds && frame.absoluteRenderBounds.width) ? frame.absoluteRenderBounds.width : frame.width;
+          var renderHeight = (frame.absoluteRenderBounds && frame.absoluteRenderBounds.height) ? frame.absoluteRenderBounds.height : frame.height;
+
+          var thumbnailScale = (renderWidth >= renderHeight)
+            ? maxThumbnailSize / renderWidth
+            : maxThumbnailSize / renderHeight;
+
+          const thumbnailOptions = { format: "PNG", constraint: { type: "SCALE", value: thumbnailScale } };
+          thumbnailBytes = await frame.exportAsync(thumbnailOptions);
+
         } catch (e) {
           console.error(`❌ Export failed for frame: ${frame.name} (${frame.id})`, e);
           continue;
@@ -100,6 +129,7 @@ figma.ui.onmessage = async (msg) => {
           var leftPercent = isScreen ? 0 : formatNumber((relativeX / parentWidth) * 100);
           var topPercent = isScreen ? 0 : formatNumber((relativeY / parentHeight) * 100);
 
+
           if (layer["__typeName"] === "LINE" || layer["__typeName"] === "VECTOR") {
             console.log("[CHECK]", layer.Layername, {
               __visualWidth: layer["__visualWidth"],
@@ -154,6 +184,10 @@ figma.ui.onmessage = async (msg) => {
             });
           }
 
+          if (!perFrameDivMap[finalName]) perFrameDivMap[finalName] = 0;
+          perFrameDivMap[finalName]++;
+          totalDivCount++;
+
           return '<div class="' + className + '" style="' + styles + '"' + attributes + '>' + childrenHTML + '</div>';
         }
 
@@ -168,7 +202,7 @@ figma.ui.onmessage = async (msg) => {
           });
         }
 
-        const htmlContent = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>${finalName}</title><style>body, html { margin: 0; padding: 0; width: 100vw; height: 100vh; overflow: hidden; background: #fff; display: grid; place-items: center; } #topbar { position: absolute; top: 0; width: 100%; background: #f2f2f2; padding: 8px; font-size: 14px; border-bottom: 1px solid #ccc; display: flex; justify-content: center; z-index: 10; } #frame-container { position: relative; box-shadow: 0 1px 5px #d9d9d9; } #background-image { display: block; max-width: none; } .layer-suspect { position: absolute; } .layer-suspect:hover { cursor: pointer; }</style></head><body><div id="topbar"><label>Zoom: <select id="zoom-select"><option value="0.25">25%</option><option value="0.33">33%</option><option value="0.5">50%</option><option value="0.75">75%</option><option value="1" selected>100%</option><option value="1.25">125%</option><option value="1.5">150%</option><option value="2">200%</option></select></label></div><div id="frame-container"><img id="background-image" src="../Thumbnails/${finalName}.png" alt="${finalName}">${textDivs}</div>
+        const htmlContent = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>${finalName}</title><style>body, html { margin: 0; padding: 0; width: 100vw; height: 100vh; overflow: hidden; background: #fff; display: grid; place-items: center; } #topbar { position: absolute; top: 0; width: 100%; background: #f2f2f2; padding: 8px; font-size: 14px; border-bottom: 1px solid #ccc; display: flex; justify-content: center; z-index: 10; } #frame-container { position: relative; box-shadow: 0 1px 5px #d9d9d9; } #background-image { display: block; max-width: none; } .layer-suspect { position: absolute; } .layer-suspect:hover { cursor: pointer; }</style></head><body><div id="topbar"><label>Zoom: <select id="zoom-select"><option value="0.25">25%</option><option value="0.33">33%</option><option value="0.5">50%</option><option value="0.75">75%</option><option value="1" selected>100%</option><option value="1.25">125%</option><option value="1.5">150%</option><option value="2">200%</option></select></label></div><div id="frame-container"><img id="background-image" src="preview/${finalName}.png" alt="${finalName}">${textDivs}</div>
         
           <script>
             document.addEventListener('DOMContentLoaded', function () {
@@ -265,9 +299,10 @@ figma.ui.onmessage = async (msg) => {
           </script>
         </body></html>`;
 
-        files[`Thumbnails/${finalName}.png`] = pngBytes;
-        files[`Frames/${finalName}.html`] = htmlContent;
-        linkArrayForScript.push({ name: frameName, page: page.name, url: `Frames/${finalName}.html` });
+        files[`frames/preview/${finalName}.png`] = pngBytes;
+        files[`frames/${finalName}.html`] = htmlContent;
+        exportLog += `✔️ ${finalName}\n`;
+        linkArrayForScript.push({ name: frameNameRaw, page: page.name, url: `frames/${finalName}.html` });
       }
     }
     const indexHtmlContent = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Exported Frames</title><style>body { margin: 0; height: 100vh; display: flex; overflow: hidden; font-family: sans-serif; } #sidebar { width: 200px; background: #f2f2f2; padding: 20px; box-sizing: border-box; overflow-y: auto; } #viewer { flex: 1; background: #ffffff; display: flex; align-items: center; justify-content: center; } #properties { width: 300px; background: #fafafa; overflow-y: auto; padding: 10px; border-left: 1px solid #ccc; } iframe { width: 100%; height: 100%; border: none; } a { display: block; margin-bottom: 0px; color: #333; text-decoration: none; font-size: 16px; } a:hover { text-decoration: underline; } p { margin: 0 0 10px 0; color: #999; font-size: 11px; }</style></head><body><div id="sidebar"></div><div id="viewer"><iframe id="frame-viewer" src=""></iframe></div><div id="properties">Hover a text layer to see properties</div>
@@ -313,6 +348,76 @@ figma.ui.onmessage = async (msg) => {
     </body></html>`;
 
     files["index.html"] = indexHtmlContent;
+
+    var exportEndTime = new Date();
+
+    var fileName = figma.root.name || "Untitled";
+    var userName = figma.currentUser ? figma.currentUser.name : "Unknown";
+
+    var lineWidth = 38;
+    function fixedLine(char) {
+      var line = "";
+      while (line.length < lineWidth) line += char;
+      return line;
+    }
+
+    var durationInMs = exportEndTime.getTime() - exportStartTime.getTime();
+    var totalSeconds = Math.floor(durationInMs / 1000);
+    var remainingMs = durationInMs % 1000;
+
+    var durationText = "";
+
+    if (totalSeconds < 60) {
+      durationText = `${totalSeconds}.${String(remainingMs).padStart(3, '0')} sec`;
+    } else {
+      var minutes = Math.floor(totalSeconds / 60);
+      var seconds = totalSeconds % 60;
+      durationText = `${minutes} min ${seconds}.${String(remainingMs).padStart(3, '0')} sec`;
+    }
+
+    exportLog = fixedLine("=") + "\n";
+    exportLog += "📦 PremOne Export Report\n";
+    exportLog += fixedLine("=") + "\n\n";
+
+    exportLog += "🕒 Time\n";
+    exportLog += "Started   : " + formatKST(exportStartTime) + "(KST)" + "\n";
+    exportLog += "Finished  : " + formatKST(exportEndTime) + "(KST)" + "\n";
+    exportLog += "Exported Duration  : " + durationText + "\n\n";
+
+    exportLog += "📁 File Info\n";
+    exportLog += "Figma File   : " + fileName + "\n";
+    // exportLog += "Exported by  : " + userName + "\n";
+    exportLog += "Plugin Ver.  : " + PLUGIN_VERSION + "\n";
+    exportLog += "Figma Ver.   : Not available (API restricted)\n\n";
+
+    exportLog += "📊 Summary\n";
+    exportLog += "Frames Exported : " + selectedNodes.length + "\n";
+    exportLog += "DIVs Generated  : " + totalDivCount + "\n\n";
+
+    exportLog += "📄 Pages Included\n";
+
+    pageGroupedFrames.forEach(function (frames, pageId) {
+      var pageName = sanitizeFilename(frames[0].parent.name);
+      exportLog += "- " + pageName + " : " + frames.length + " frames\n";
+    });
+
+    exportLog += "\n";
+
+    exportLog += "🖼️ Per Frame Details\n";
+    exportLog += fixedLine("…") + "\n";
+
+    for (var name in perFrameDivMap) {
+      var divCount = perFrameDivMap[name];
+      var label = name.length > 36 ? name.slice(0, 33) + "..." : name;
+      while (label.length < 40) label += " ";
+      exportLog += "✔️ " + label + ": " + divCount + " divs\n";
+    }
+
+    exportLog += fixedLine("…") + "\n\n";
+    exportLog += "Generated by PremOne Figma Plugin\n";
+
+    files["logs/export-log.txt"] = stringToUint8Array(exportLog);
+
     figma.ui.postMessage({ type: "download", files });
   }
 };
@@ -332,7 +437,10 @@ function getAllTopFrames() {
 }
 
 function sanitizeFilename(name) {
-  return name.replace(/[<>:"/\\|?*]/g, "").replace(/\s+/g, "_");
+  return name
+    .replace(/[<>:"/\\|?*]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/\.+/g, "");
 }
 
 async function findTargetLayers(node, rootFrameId) {
@@ -527,4 +635,26 @@ function roundToStepPercent(value, step) {
   var fixed = rounded.toFixed(3);
   if (fixed.endsWith(".000")) return parseInt(fixed, 10);
   return parseFloat(fixed);
+}
+
+function stringToUint8Array(str) {
+  var utf8 = unescape(encodeURIComponent(str));
+  var result = new Uint8Array(utf8.length);
+  for (var i = 0; i < utf8.length; i++) {
+    result[i] = utf8.charCodeAt(i);
+  }
+  return result;
+}
+
+function formatKST(date) {
+  var utc = date.getTime() + (date.getTimezoneOffset() * 60000);
+  var kst = new Date(utc + (9 * 60 * 60 * 1000));
+  return (
+    kst.getFullYear() + "-" +
+    String(kst.getMonth() + 1).padStart(2, '0') + "-" +
+    String(kst.getDate()).padStart(2, '0') + " " +
+    String(kst.getHours()).padStart(2, '0') + ":" +
+    String(kst.getMinutes()).padStart(2, '0') + ":" +
+    String(kst.getSeconds()).padStart(2, '0')
+  );
 }
